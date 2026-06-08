@@ -1,0 +1,41 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package integration.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+// Published when a new Integration row is inserted (first-time connect).
+message IntegrationCreated {
+  string integration_id  = 1;
+  string workspace_id    = 2;
+  string provider_id     = 3;
+  string owner_member_id = 4;   // empty for LEVEL_WORKSPACE integrations
+  .common.v1.Nrn created_by_nrn   = 5;
+  google.protobuf.Timestamp created_at  = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+}
+
+// Published when an existing Integration row is updated (e.g. token rotation,
+// access_level change).
+message IntegrationUpdated {
+  string integration_id  = 1;
+  string workspace_id    = 2;
+  string provider_id     = 3;
+  .common.v1.Nrn updated_by_nrn   = 4;
+  google.protobuf.Timestamp updated_at  = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}
+
+// Published when an Integration row is hard-deleted.
+// secret-manager listens to this event and hard-deletes all Secret rows
+// where related_to_nrn = nweb:integration:integration:<integration_id>.
+message IntegrationDeleted {
+  string integration_id  = 1;
+  string workspace_id    = 2;
+  string provider_id     = 3;
+  string owner_member_id = 4;   // empty for LEVEL_WORKSPACE integrations
+  .common.v1.Nrn deleted_by_nrn   = 5;
+  google.protobuf.Timestamp deleted_at  = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+}

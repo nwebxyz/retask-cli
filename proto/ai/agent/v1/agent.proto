@@ -1,0 +1,176 @@
+syntax = "proto3";
+package ai.agent.v1;
+
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+
+message Agent {
+  // @inject_tag: bson:"_id,omitempty"
+  string agent_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  optional string workspace_id = 2;
+  // @inject_tag: bson:"name"
+  string name = 3;
+  // @inject_tag: bson:"icon"
+  common.v1.Icon icon = 4;
+  // @inject_tag: bson:"model"
+  Model model = 5;
+  // @inject_tag: bson:"instruction"
+  string instruction = 6;
+  // @inject_tag: bson:"is_feature"
+  bool is_feature = 7;
+  //  Priority: bigger is higher priority
+  // @inject_tag: bson:"priority"
+  int64 priority = 8;
+
+  // @inject_tag: bson:"is_disabled"
+  bool is_disabled = 9;
+  // @inject_tag: bson:"disabled_reason"
+  string disabled_reason = 10;
+  // @inject_tag: bson:"is_hidden_from_list"
+  bool is_hidden_from_list = 11;
+
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 12;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 13;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 14;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 15;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 16;
+}
+
+message Model {
+  message Features {
+    // @inject_tag: bson:"input_types"
+    enum MediaType {
+      TEXT = 0;
+      IMAGE = 1;
+      VIDEO = 2;
+      AUDIO = 3;
+      DOCUMENT = 4;
+    }
+    repeated MediaType input_types = 1;
+    // @inject_tag: bson:"output_types"
+    repeated MediaType output_types = 2;
+    // @inject_tag: bson:"context_window"
+    int64 context_window = 3;
+    // @inject_tag: bson:"is_fast"
+    bool is_fast = 4;
+    // @inject_tag: bson:"is_flagship"
+    bool is_flagship = 5;
+    // @inject_tag: bson:"is_local"
+    bool is_local = 6;
+    // @inject_tag: bson:"is_reasoning"
+    bool is_reasoning = 7;
+    // @inject_tag: bson:"is_expensive"
+    bool is_expensive = 8;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string model_id = 1; // Format: <researcher>:<model>
+  // @inject_tag: bson:"researcher"
+  string researcher = 2;
+  // @inject_tag: bson:"model"
+  string model = 3;
+  // @inject_tag: bson:"icon"
+  common.v1.Icon icon = 5;
+  // @inject_tag: bson:"features"
+  Features features = 6;
+  // @inject_tag: bson:"is_disabled"
+  bool is_disabled = 7;
+  // @inject_tag: bson:"available_at"
+  google.protobuf.Timestamp available_at = 8;
+  // @inject_tag: bson:"provider"
+  string provider = 9;
+}
+
+message Tool {
+  // @inject_tag: bson:"_id,omitempty"
+  string tool_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  optional string workspace_id = 2;
+  // @inject_tag: bson:"agent_id"
+  optional string agent_id = 3;
+  // @inject_tag: bson:"name"
+  string name = 4;
+  // @inject_tag: bson:"description"
+  string description = 5;
+  // @inject_tag: bson:"icon"
+  common.v1.Icon icon = 6;
+  // @inject_tag: bson:"configurations"
+  map<string, string> configurations = 7;
+
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 8;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 9;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 10;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 11;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 12;
+}
+
+service AgentService {
+  // Agent
+  rpc GetAgents (AgentsRequest) returns (AgentsResponse) {}
+  rpc GetAgent (common.v1.Id) returns (Agent) {}
+  rpc SetAgent (Agent) returns (common.v1.Id) {}
+  rpc DeleteAgent (common.v1.Id) returns (common.v1.Empty) {}
+
+  // Tool
+  rpc GetTools (ToolsRequest) returns (ToolsResponse) {}
+  rpc GetTool (common.v1.Id) returns (Tool) {}
+  rpc SetTool (Tool) returns (common.v1.Id) {}
+  rpc DeleteTool (common.v1.Id) returns (common.v1.Empty) {}
+}
+
+message AgentsRequest {
+  message Filter {
+    repeated string agent_ids = 1;
+    string workspace_id = 2;
+    common.v1.YesNo is_feature = 3;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    PRIORITY = 1;
+    DATE_A = 2;
+    DATE_D = 3;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message AgentsResponse {
+  repeated Agent agents = 1;
+}
+
+message ToolsRequest {
+  message Filter {
+    repeated string tool_ids = 1;
+    string workspace_id = 2;
+    string agent_id = 3;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    PRIORITY = 1;
+    DATE_A = 2;
+    DATE_D = 3;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message ToolsResponse {
+  repeated Tool tools = 1;
+}

@@ -1,0 +1,51 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.common.v1;
+
+message Color {
+  // @inject_tag: bson:"main"
+  string main = 1;
+  // @inject_tag: bson:"light"
+  string light = 2;
+  // @inject_tag: bson:"dark"
+  string dark = 3;
+  // @inject_tag: bson:"contrast_text"
+  string contrast_text = 4;
+}
+
+// Shared by Project (as definition list) and Task (as embedded object).
+// status_id is a slug generated from name (e.g. "In Progress" -> "in-progress").
+message TaskStatus {
+  // @inject_tag: bson:"status_id"
+  string status_id  = 1;
+  // @inject_tag: bson:"name"
+  string name       = 2;
+  // @inject_tag: bson:"color"
+  Color color       = 3;
+  // @inject_tag: bson:"icon"
+  string icon       = 4;
+  // @inject_tag: bson:"sort_order"
+  uint64 sort_order = 5;
+  // @inject_tag: bson:"is_default"
+  bool is_default   = 6;
+  // @inject_tag: bson:"is_done"
+  bool is_done      = 7;
+}
+
+// Shared by Project (as definition list) and Task (as embedded object).
+// type_id is a slug generated from name (e.g. "Epic" -> "epic").
+// Default set: Epic, Story, Bug, Task, Subtask, Doc.
+message TaskType {
+  // @inject_tag: bson:"type_id"
+  string type_id = 1;
+  // @inject_tag: bson:"name"
+  string name = 2;
+  // @inject_tag: bson:"color"
+  Color color = 3;
+  // @inject_tag: bson:"icon"
+  string icon = 4;
+  // @inject_tag: bson:"sort_order"
+  uint64 sort_order = 5;
+  // @inject_tag: bson:"is_default"
+  bool is_default = 6;
+}

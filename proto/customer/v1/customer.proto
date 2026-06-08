@@ -1,0 +1,173 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package customer.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "common/v1/address.proto";
+import "common/v1/image.proto";
+import "common/v1/soft_delete.proto";
+
+
+service CustomerService {
+  rpc GetMyProfile (common.v1.Empty) returns (Customer) {
+    option (google.api.http) = {get: "/v1/profile"};
+  }
+  rpc SetMyProfile(Customer) returns (common.v1.Id) {
+    option (google.api.http) = {
+      post: "/v1/profile"
+      body: "*"
+    };
+  }
+  rpc GetOrCreateMyProfile(Customer) returns (Customer) {
+    option (google.api.http) = {
+      post: "/v1/profile/get-or-create"
+      body: "*"
+    };
+  }
+
+  //  Following APIs should be used by BE calls only
+  rpc GetCustomers (CustomersRequest) returns (CustomersResponse) {
+    option (google.api.http) = {get: "/v1/customers"};
+  }
+  rpc GetCustomer (common.v1.Id) returns (Customer) {
+    option (google.api.http) = {get: "/v1/customers/{id}"};
+  }
+  rpc GetCustomerByUserId (common.v1.Id) returns (Customer) {
+    option (google.api.http) = {get: "/v1/users/{id}/customer"};
+  }
+  rpc SetCustomer(Customer) returns (common.v1.Id) {
+    option (google.api.http) = {
+      post: "/v1/customers"
+      body: "*"
+    };
+  }
+  rpc DeleteCustomer (common.v1.Id) returns (common.v1.Empty) {
+    option (google.api.http) = {delete: "/v1/customers/{id}"};
+  }
+  rpc GetCustomerRiskByUserId (common.v1.Id) returns (CustomerRisk) {
+    option (google.api.http) = {get: "/v1/users/{id}/customer-risk"};
+  }
+}
+
+message CustomersResponse {
+  repeated Customer customers = 1;
+}
+
+message CustomersRequest {
+  message Filter {
+    repeated string customer_ids = 1;
+    string metadata_user_id = 2;
+    common.v1.YesNo has_user = 3;
+    common.v1.YesNo has_stripe_customer = 4;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    DATE_A = 1;
+    DATE_D = 2;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message Metadata {
+  //  (Optional) user_id if the customer has an account to login
+  // @inject_tag: bson:"user_id"
+  string user_id = 1;
+  //  (Optional) user_id if the customer has an account to login
+  // @inject_tag: bson:"stripe_customer_id"
+  string stripe_customer_id = 2;
+}
+
+message Customer {
+  // @inject_tag: bson:"_id,omitempty"
+  string customer_id = 1;
+  // Customer full name or business name, calculated from first_name and last_name, fallback to email if missing
+  // @inject_tag: bson:"name"
+  string name = 2;
+  // @inject_tag: bson:"first_name"
+  string first_name = 3;
+  // @inject_tag: bson:"last_name"
+  string last_name = 4;
+  // @inject_tag: bson:"email"
+  string email = 5;
+  // @inject_tag: bson:"phone"
+  string phone = 6;
+  // @inject_tag: bson:"photo"
+  common.v1.Image photo = 7;
+  // @inject_tag: bson:"addresses"
+  repeated common.v1.Address addresses = 8;
+  // @inject_tag: bson:"timezone"
+  string timezone = 9;
+  // @inject_tag: bson:"metadata"
+  Metadata metadata = 10;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 11;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 12;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 13;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 14;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 15;
+  // @inject_tag: bson:"notification_settings"
+  NotificationSettings notification_settings = 16;
+  // @inject_tag: bson:"appearance_settings"
+  AppearanceSettings appearance_settings = 17;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  common.v1.DeletionInfo deletion_info = 18;
+}
+
+message NotificationSettings {
+  message General {
+    // @inject_tag: bson:"disable_newsletter"
+    bool disable_newsletter = 1;
+  }
+  message Task {
+    // @inject_tag: bson:"disable_task_assigned"
+    bool disable_task_assigned = 1;
+    // @inject_tag: bson:"disable_reply_on_comment"
+    bool disable_reply_on_comment = 2;
+    // @inject_tag: bson:"disable_task_status_changed"
+    bool disable_task_status_changed = 3;
+    // @inject_tag: bson:"disable_mentioned_in_task"
+    bool disable_mentioned_in_task = 4;
+  }
+  message Session {
+    // @inject_tag: bson:"disable_agent_finished"
+    bool disable_agent_finished = 1;
+    // @inject_tag: bson:"disable_agent_error"
+    bool disable_agent_error = 2;
+    // @inject_tag: bson:"disable_agent_awaiting_input"
+    bool disable_agent_awaiting_input = 3;
+  }
+
+  // @inject_tag: bson:"general"
+  General general = 1;
+  // @inject_tag: bson:"task"
+  Task task = 2;
+  // @inject_tag: bson:"session"
+  Session session = 3;
+}
+
+message AppearanceSettings {
+  enum ThemePreference {
+    THEME_PREFERENCE_LIGHT = 0;
+    THEME_PREFERENCE_DARK = 1;
+    THEME_PREFERENCE_SYSTEM = 2;
+  }
+
+  // @inject_tag: bson:"theme"
+  ThemePreference theme = 1;
+}
+
+message CustomerRisk {
+  string customer_id = 1;
+  common.v1.YesNo has_risk = 2;
+  string reason = 3;
+}

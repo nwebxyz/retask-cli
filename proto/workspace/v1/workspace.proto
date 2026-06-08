@@ -1,0 +1,276 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package workspace.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "auth/v1/user_access.proto";
+import "common/v1/common.proto";
+import "common/v1/image.proto";
+import "common/v1/nrn.proto";
+import "common/v1/soft_delete.proto";
+
+
+service WorkspaceService {
+  rpc GetWorkspaces (WorkspacesRequest) returns (WorkspacesResponse) {
+    option (google.api.http) = {get: "/v1/workspaces"};
+  }
+  rpc GetWorkspace (common.v1.Id) returns (Workspace) {
+    option (google.api.http) = {get: "/v1/workspaces/{id}"};
+  }
+  rpc SetWorkspace (Workspace) returns (common.v1.Id) {
+    option (google.api.http) = {
+      post: "/v1/workspaces"
+      body: "*"
+    };
+  }
+  rpc DeleteWorkspace (common.v1.Id) returns (common.v1.Empty) {
+    option (google.api.http) = {delete: "/v1/workspaces/{id}"};
+  }
+
+  rpc GetWorkspaceMembers(WorkspaceMembersRequest) returns (WorkspaceMembersResponse) {
+    option (google.api.http) = {get: "/v1/workspaces/{workspace_id}/members"};
+  }
+  rpc InviteWorkspaceMember(InviteWorkspaceMemberRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {
+      post: "/v1/workspaces/{workspace_id}/members:invite"
+      body: "*"
+    };
+  }
+  rpc AddWorkspaceAgent(AddWorkspaceAgentRequest) returns (common.v1.Id) {
+    option (google.api.http) = {
+      post: "/v1/workspaces/{workspace_id}/members:add-agent"
+      body: "*"
+    };
+  }
+  rpc UpdateWorkspaceMember(UpdateWorkspaceMemberRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {
+      patch: "/v1/workspaces/{workspace_id}/members/{workspace_member_id}"
+      body: "*"
+    };
+  }
+  rpc RemoveWorkspaceMember(RemoveWorkspaceMemberRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {delete: "/v1/workspaces/{workspace_id}/members"};
+  }
+  rpc AcceptWorkspaceInvitation(AcceptWorkspaceInvitationRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {post: "/v1/workspaces/{workspace_id}/members/{workspace_member_id}:accept-invitation"};
+  }
+  rpc DeclineWorkspaceInvitation(DeclineWorkspaceInvitationRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {post: "/v1/workspaces/{workspace_id}/members/{workspace_member_id}:decline-invitation"};
+  }
+  rpc LeaveWorkspace(LeaveWorkspaceRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {post: "/v1/workspaces/{workspace_id}/members/{workspace_member_id}:leave"};
+  }
+
+  rpc CheckWorkspacePermissions (CheckWorkspacePermissionsRequest) returns (CheckWorkspacePermissionsResponse) {
+    option (google.api.http) = {
+      post: "/v1/workspaces:check-permissions"
+      body: "*"
+    };
+  }
+
+  rpc GetWorkspaceMembersUsage(WorkspaceMembersUsageRequest) returns (WorkspaceMembersUsage) {
+    option (google.api.http) = {get: "/v1/workspaces/{workspace_id}/members:usage"};
+  }
+}
+
+enum WorkspaceMemberRole {
+  VIEWER = 0;
+  EDITOR = 1;
+  ADMIN = 2;
+  OWNER = 3;
+}
+
+enum MembershipStatus {
+  PENDING = 0;
+  ACTIVE = 1;
+  DECLINED = 2;
+}
+
+// Snapshot of customer profile data, cached on the workspace member.
+// Source of truth is the Customer service; this is denormalized for read convenience.
+message MemberProfile {
+  // @inject_tag: bson:"customer_id"
+  string customer_id = 1;
+  // @inject_tag: bson:"name"
+  string name = 2;
+  // @inject_tag: bson:"email"
+  string email = 3;
+  // @inject_tag: bson:"photo"
+  common.v1.Image photo = 4;
+}
+
+message WorkspaceMember {
+  // @inject_tag: bson:"_id,omitempty"
+  string workspace_member_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"role"
+  WorkspaceMemberRole role = 3;
+  // Auth user or AI agent. Format: "nweb:auth:user:<id>" or "nweb:retask-agent:agent:<id>"
+  // @inject_tag: bson:"user_nrn"
+  common.v1.Nrn user_nrn = 4;
+  // Snapshot of customer profile. Populated by BE when member becomes ACTIVE.
+  // Source of truth is the Customer service; this is denormalized for read convenience.
+  // @inject_tag: bson:"member_profile"
+  MemberProfile member_profile = 5;
+  // @inject_tag: bson:"invited_email"
+  string invited_email = 6;
+  // Set by inviter (ADMIN/OWNER). Not editable by the member.
+  // @inject_tag: bson:"display_name"
+  string display_name = 7;
+  // @inject_tag: bson:"membership_status"
+  MembershipStatus membership_status = 8;
+  // @inject_tag: bson:"invited_by_nrn"
+  common.v1.Nrn invited_by_nrn = 9;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 10;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 11;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 12;
+  // Timestamp when the member became ACTIVE (accepted invitation or workspace creation).
+  // @inject_tag: bson:"joined_at"
+  google.protobuf.Timestamp joined_at = 13;
+}
+
+message WorkspaceMembersResponse {
+  repeated WorkspaceMember members = 1;
+}
+
+message WorkspaceMembersRequest {
+  string workspace_id = 1;
+  repeated WorkspaceMemberRole roles = 2;
+  repeated string workspace_member_ids = 3;
+  repeated MembershipStatus membership_statuses = 4;
+  repeated string user_nrns = 5;
+}
+
+message InviteWorkspaceMemberRequest {
+  string workspace_id = 1;
+  string invited_email = 2;
+  string display_name = 3;
+  WorkspaceMemberRole role = 4;
+}
+
+message AddWorkspaceAgentRequest {
+  string workspace_id = 1;
+  string agent_id = 2;
+  WorkspaceMemberRole role = 3;
+  MemberProfile member_profile = 4;
+  string display_name = 5;
+}
+
+message UpdateWorkspaceMemberRequest {
+  string workspace_id = 1;
+  string workspace_member_id = 2;
+  WorkspaceMemberRole role = 3;
+  string display_name = 4;
+}
+
+message RemoveWorkspaceMemberRequest {
+  string workspace_id = 1;
+  string workspace_member_id = 2;
+}
+
+message AcceptWorkspaceInvitationRequest {
+  string workspace_id = 1;
+  string workspace_member_id = 2;
+}
+
+message DeclineWorkspaceInvitationRequest {
+  string workspace_id = 1;
+  string workspace_member_id = 2;
+}
+
+message LeaveWorkspaceRequest {
+  string workspace_id = 1;
+  string workspace_member_id = 2;
+}
+
+message CheckWorkspacePermissionsRequest {
+  common.v1.Nrn user_nrn = 1;
+  WorkspaceMemberRole required_role = 2;
+  repeated string workspace_ids = 3;
+}
+
+// WorkspaceUserAccess wraps auth.v1.UserAccess with the caller's effective
+// role. Populated by the server on read; never persisted.
+message WorkspaceUserAccess {
+  auth.v1.UserAccess access = 1;
+  WorkspaceMemberRole role = 2;
+  string workspace_member_id = 3;
+}
+
+message CheckWorkspacePermissionsResponse {
+  repeated WorkspacePermission permissions = 1;
+}
+
+message WorkspacePermission {
+  string workspace_id = 1;
+  WorkspaceMemberRole role = 2;
+}
+
+message WorkspacesResponse {
+  repeated Workspace workspaces = 1;
+}
+
+message WorkspacesRequest {
+  message Filter {
+    repeated string workspace_ids = 1;
+    common.v1.Nrn owner_nrn = 2;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    DATE_A = 1;
+    DATE_D = 2;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message Workspace {
+  // @inject_tag: bson:"_id,omitempty"
+  string workspace_id = 1;
+  // @inject_tag: bson:"name"
+  string name = 2;
+  // @inject_tag: bson:"description"
+  string description = 3;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 4;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 5;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 6;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 7;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 8;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  common.v1.DeletionInfo deletion_info = 9;
+
+  // @inject_tag: bson:"color,omitempty"
+  string color = 10;
+
+  // Per-caller access for the authenticated user. Populated by the server
+  // on read; ignored on write and never persisted.
+  // @inject_tag: bson:"-"
+  WorkspaceUserAccess user_access = 11;
+}
+
+message WorkspaceMembersUsageRequest {
+  string workspace_id = 1;
+}
+
+message WorkspaceMembersUsage {
+  // ACTIVE status, user_nrn prefix nweb:auth:user: (counts toward max_users_per_workspace)
+  uint32 active_members = 1;
+  // ACTIVE status, user_nrn prefix nweb:retask-agent:agent: (counts toward max_agents_per_workspace)
+  uint32 active_agents = 2;
+  // PENDING status — display only, not counted against quota
+  uint32 pending_invitations = 3;
+  // DECLINED status — display only, not counted against quota
+  uint32 declined_invitations = 4;
+}

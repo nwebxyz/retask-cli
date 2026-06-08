@@ -1,0 +1,59 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.ocr.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+message OcrTask {
+  enum Status {
+    READY = 0;
+    IN_PROGRESS = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+    CANCELLED = 4;
+  }
+  // @inject_tag: bson:"_id,omitempty"
+  string ocr_task_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"file_id"
+  string file_id = 3;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 4;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 5;
+  // @inject_tag: bson:"status"
+  Status status = 6;
+  // @inject_tag: bson:"max_attempt"
+  uint32 max_attempt = 7;
+  // @inject_tag: bson:"next_available_run_time"
+  google.protobuf.Timestamp next_available_run_time = 8;
+  // @inject_tag: bson:"task_runs"
+  repeated OcrTaskRun task_runs = 9;
+  // @inject_tag: bson:"cost_credits"
+  uint64 cost_credits = 10; // Total credits of all successful runs
+}
+
+message OcrTaskRun {
+  // @inject_tag: bson:"_id,omitempty"
+  string ocr_task_run_id = 1;
+  // @inject_tag: bson:"ocr_task_id"
+  string ocr_task_id = 2;
+  // @inject_tag: bson:"scheduled_at"
+  google.protobuf.Timestamp scheduled_at = 3;
+  // @inject_tag: bson:"runner_nrn"
+  common.v1.Nrn runner_nrn = 4;
+  // @inject_tag: bson:"started_at"
+  google.protobuf.Timestamp started_at = 5;
+  // @inject_tag: bson:"completed_at"
+  google.protobuf.Timestamp completed_at = 6;
+  // @inject_tag: bson:"is_success"
+  bool is_success = 7;
+  // @inject_tag: bson:"error_code"
+  string error_code = 8;
+  // @inject_tag: bson:"error_message"
+  string error_message = 9;
+  // @inject_tag: bson:"cost_credits"
+  uint64 cost_credits = 10;
+}

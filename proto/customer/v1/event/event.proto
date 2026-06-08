@@ -1,0 +1,14 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package customer.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "customer/v1/customer.proto";
+
+message CustomerUpdated {
+  string customer_id = 1;
+  common.v1.Nrn updated_by_nrn = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+  customer.v1.Customer new_customer = 4;
+}

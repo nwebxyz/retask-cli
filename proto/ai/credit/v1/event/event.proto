@@ -1,0 +1,27 @@
+// Copyright 2024 NWEB.xyz
+syntax = "proto3";
+package ai.credit.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+message CreditWalletCreated {
+  string credit_wallet_id = 1;
+  common.v1.Nrn owner_nrn = 2;
+  common.v1.Nrn created_by_nrn = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message ActiveCreditApproved {
+  string active_credit_id = 1;
+  string credit_wallet_id = 2;
+  int64 active_amount = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}
+
+message CreditWalletBalanceChanged {
+  string credit_wallet_id = 1;
+  int64 balance_amount = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}

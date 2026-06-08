@@ -1,0 +1,14 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package payment.v1.command;
+
+import "google/protobuf/timestamp.proto";
+
+// Instructs PaymentService to reconcile seats for one subscription.
+// Handler re-fetches workspace member count; skips if count matches total_seats.
+message SyncSubscriptionSeats {
+  string subscription_id = 1;
+  string workspace_id    = 2;
+  string product_key     = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}

@@ -1,0 +1,8 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.ocr.v1;
+
+
+service OCRService {
+  // No APIs now, only receive commands
+}

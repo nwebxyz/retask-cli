@@ -1,0 +1,25 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package workspace.v1;
+
+import "common/v1/nrn.proto";
+
+message Sharing {
+  enum Scope {
+    SCOPE_PRIVATE    = 0;
+    SCOPE_RESTRICTED = 1;
+    SCOPE_WORKSPACE  = 2;
+  }
+  enum Permission {
+    PERMISSION_VIEW = 0;
+    PERMISSION_EDIT = 1;
+  }
+  // @inject_tag: bson:"scope"
+  Scope scope = 1;
+  // @inject_tag: bson:"permission"
+  Permission permission = 2;
+  // When RESTRICTED: must include the owner's NRN so queries only need
+  // to check `caller IN shared_with_nrns` without a separate owner_nrn lookup.
+  // @inject_tag: bson:"shared_with_nrns"
+  repeated .common.v1.Nrn shared_with_nrns = 3;
+}

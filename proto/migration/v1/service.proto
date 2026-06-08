@@ -1,0 +1,20 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package migration.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service MigrationService {
+  // No APIs now, only receive commands
+}
+
+
+message MigrationTask {
+  //  migration_id is the name of the migration, e.g. "add_missing_credit_wallets"
+  // @inject_tag: bson:"_id,omitempty"
+  string migration_task_id = 1;
+  // @inject_tag: bson:"started_at"
+  google.protobuf.Timestamp started_at = 2;
+  // @inject_tag: bson:"completed_at"
+  google.protobuf.Timestamp completed_at = 3;
+}

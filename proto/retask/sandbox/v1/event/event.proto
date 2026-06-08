@@ -1,0 +1,83 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.sandbox.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "retask/sandbox/v1/sandbox.proto";
+
+message SandboxCreated {
+  string sandbox_id = 1;
+  string workspace_id = 2;
+  .common.v1.Nrn created_by_nrn = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message SandboxDeleted {
+  string sandbox_id = 1;
+  string workspace_id = 2;
+  .common.v1.Nrn deleted_by_nrn = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message SandboxTemplateCreated {
+  string sandbox_template_id = 1;
+  string workspace_id = 2;
+  .common.v1.Nrn created_by_nrn = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message SandboxTemplateDeleted {
+  string sandbox_template_id = 1;
+  string workspace_id = 2;
+  .common.v1.Nrn deleted_by_nrn = 3;
+  google.protobuf.Timestamp deleted_at = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message SandboxTemplateConfigChanged {
+  string sandbox_template_id = 1;
+  string workspace_id = 2;
+  .common.v1.Nrn updated_by_nrn = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message SandboxStatusChanged {
+  string sandbox_id   = 1;
+  string workspace_id = 2;
+  .retask.sandbox.v1.Sandbox.Status old_status = 3;
+  .retask.sandbox.v1.Sandbox.Status new_status = 4;
+  google.protobuf.Timestamp occurred_at        = 5;
+}
+
+message SessionStatusChanged {
+  string session_id   = 1;
+  string sandbox_id   = 2;
+  string workspace_id = 3;
+  .retask.sandbox.v1.Session.Status          old_status       = 4;
+  .retask.sandbox.v1.Session.Status          new_status       = 5;
+  .retask.sandbox.v1.Session.Insights.NeedUserAction need_user_action = 6;
+  google.protobuf.Timestamp occurred_at                       = 7;
+}
+
+message SessionCreated {
+  string session_id    = 1;
+  string sandbox_id    = 2;
+  string workspace_id  = 3;
+  .common.v1.Nrn created_by_nrn        = 4;
+  google.protobuf.Timestamp created_at  = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}
+
+message SessionDeleted {
+  string session_id    = 1;
+  string sandbox_id    = 2;
+  string workspace_id  = 3;
+  .common.v1.Nrn deleted_by_nrn        = 4;
+  google.protobuf.Timestamp deleted_at  = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}

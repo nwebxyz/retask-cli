@@ -1,0 +1,38 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.credit.v1.command;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "ai/credit/v1/credit.proto";
+
+message NewCreditWallet {
+  ai.credit.v1.CreditWallet wallet = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+}
+
+message NewActiveCredit {
+  //  "credit_wallet_id" or "wallet_owner_nrn" must be provided
+  string credit_wallet_id = 1;
+  //  "credit_wallet_id" or "wallet_owner_nrn" must be provided
+  common.v1.Nrn wallet_owner_nrn = 2;
+  ai.credit.v1.ActiveCredit active_credit = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}
+
+message AggregateActiveCredits {
+  string credit_wallet_id = 1;
+  common.v1.Nrn initiator = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}
+
+// NewCreditTransactions should be called by "credit" service internally only
+// After aggregating all active credits, it will emit this event to create credit transactions
+message NewCreditTransactions {
+  //  "credit_wallet_id" or "wallet_owner_nrn" must be provided
+  string credit_wallet_id = 1;
+  //  "credit_wallet_id" or "wallet_owner_nrn" must be provided
+  common.v1.Nrn wallet_owner_nrn = 2;
+  repeated ai.credit.v1.CreditTransaction transactions = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}

@@ -1,0 +1,26 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.task.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "retask/common/v1/types.proto";
+
+message TaskCreated {
+  string task_id = 1;
+  string project_id = 2;
+  string workspace_id = 3;
+  .common.v1.Nrn created_by_nrn = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}
+
+message TaskStatusChanged {
+  string task_id = 1;
+  string project_id = 2;
+  string workspace_id = 3;
+  retask.common.v1.TaskStatus old_status = 4;
+  retask.common.v1.TaskStatus new_status = 5;
+  .common.v1.Nrn changed_by_nrn = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+}

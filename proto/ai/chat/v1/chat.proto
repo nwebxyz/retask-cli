@@ -1,0 +1,85 @@
+syntax = "proto3";
+package ai.chat.v1;
+
+
+import "common/v1/common.proto";
+import "ai/chat/v1/general.proto";
+
+service ChatService {
+  rpc CreateThread(Thread) returns (common.v1.Id) {}
+  rpc UpdatePartialThread (common.v1.PartialData) returns (common.v1.Id) {}
+  rpc GetThread (common.v1.Id) returns (Thread) {}
+  rpc GetThreads(ThreadsRequest) returns (ThreadsResponse) {}
+  rpc DeleteThread (common.v1.Id) returns (common.v1.Empty) {}
+
+  // Send message and receive streaming responses with event or response messages
+  //  - Client should send request with "request_id" (UUID) and use it as temporary identifier for request.
+  //  - Server will response with "request_id" and correct "id" of the new message.
+  //  - Server will return full Message for first time and ChunkedMessage for subsequent chunks of same message.
+  rpc SendMessages(SendMessagesRequest) returns (stream SendMessagesResponse) {}
+  rpc GetMessage (common.v1.Id) returns (Message) {}
+  rpc GetMessages(MessagesRequest) returns (MessagesResponse) {}
+  rpc DeleteMessage (common.v1.Id) returns (common.v1.Empty) {}
+}
+
+message ThreadsRequest {
+  message Filter {
+    repeated string thread_ids = 1;
+    string workspace_id = 2;
+    common.v1.YesNo is_pinned = 3;
+    bool include_temporary = 4;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    DATE_A = 1;
+    DATE_D = 2;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message ThreadsResponse {
+  repeated Thread threads = 1;
+}
+
+message SendMessagesRequest {
+  string request_id = 1;
+  string workspace_id = 2;
+  //  "thread_id" can be empty for new thread
+  string thread_id = 3;
+  bool is_temporary = 4;
+  string agent_id = 5;
+  string fork_from_message_id = 6;
+  repeated Message messages = 7;
+}
+
+message SendMessagesResponse {
+  string request_id = 1;
+  string thread_id = 2;
+  oneof response {
+    Message message = 3;                // Full or initial message belong to message.status
+    ChunkedMessage chunked_message = 4; // Chunked message should be concatenated to with all chunks of same message_id
+    EventMessage event = 5;
+  }
+}
+
+message MessagesRequest {
+  message Filter {
+    string thread_id = 1;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    DATE_A = 1;
+    DATE_D = 2;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message MessagesResponse {
+  repeated Message messages = 1;
+}

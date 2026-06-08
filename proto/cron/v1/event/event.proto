@@ -1,0 +1,14 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package cron.v1.event;
+
+import "google/protobuf/timestamp.proto";
+
+message CronEventOccurred {
+  string cron_id = 1;
+  string name = 2;
+  string target_id = 3;
+  map<string, string> metadata = 4;
+  google.protobuf.Timestamp scheduled_time = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}

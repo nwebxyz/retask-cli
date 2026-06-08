@@ -1,0 +1,206 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package subscription.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "common/v1/price.proto";
+import "common/v1/alert_message.proto";
+import "common/v1/soft_delete.proto";
+
+message SubscriptionPlan {
+  enum Type {
+    TYPE_FREE = 0;
+    TYPE_STARTER = 1;
+    TYPE_BUILDER = 2;
+    TYPE_PRO = 3;
+    TYPE_CUSTOM = 4;
+  }
+  enum Repeat {
+    REPEAT_MONTHLY = 0;
+    REPEAT_YEARLY = 1;
+  }
+  message Metadata {
+    message NwebAIConfig {
+      // @inject_tag: bson:"including_seats"
+      uint64          including_seats = 1;
+      // @inject_tag: bson:"max_seats"
+      uint64          max_seats = 2;
+      // @inject_tag: bson:"including_credits"
+      uint64          including_credits = 3;
+      // @inject_tag: bson:"extra_seat_price"
+      common.v1.Price extra_seat_price = 4;
+      // @inject_tag: bson:"monthly_credits_per_extra_seat"
+      uint64          monthly_credits_per_extra_seat = 5;
+    }
+    message RetaskConfig {
+      message Features {
+        // @inject_tag: bson:"instance_type_choosing"
+        bool instance_type_choosing = 1;
+        // @inject_tag: bson:"docker_in_docker"
+        bool docker_in_docker = 2;
+        // @inject_tag: bson:"always_running_sandbox"
+        bool always_running_sandbox = 3;
+        // @inject_tag: bson:"live_url_sandbox"
+        bool live_url_sandbox = 4;
+        // @inject_tag: bson:"event_triggered_agents"
+        bool event_triggered_agents = 5;
+        // @inject_tag: bson:"advanced_project_visibility"
+        bool advanced_project_visibility = 6;
+        // @inject_tag: bson:"advanced_roles"
+        bool advanced_roles = 7;
+        // @inject_tag: bson:"priority_compute"
+        bool priority_compute = 8;
+        // @inject_tag: bson:"advanced_sharing"
+        bool advanced_sharing = 9;
+      }
+
+      // Seats. -1 = unlimited, 0 = no access, >0 = cap.
+      // @inject_tag: bson:"max_users_per_workspace"
+      int64           max_users_per_workspace = 1;
+      // @inject_tag: bson:"extra_seat_price"
+      common.v1.Price extra_seat_price = 2;
+
+      // Projects & tasks
+      // @inject_tag: bson:"max_projects_per_workspace"
+      int64 max_projects_per_workspace = 3;
+      // @inject_tag: bson:"max_tasks_per_project"
+      int64 max_tasks_per_project = 4;
+
+      // Sandbox runtime pooled at workspace level (hours)
+      // @inject_tag: bson:"daily_bonus_sandbox_hours_per_workspace"
+      int64 daily_bonus_sandbox_hours_per_workspace = 5;
+      // @inject_tag: bson:"extra_sandbox_hours_per_user_per_month"
+      int64 extra_sandbox_hours_per_user_per_month = 6;
+
+      // @inject_tag: bson:"max_sandboxes_per_workspace"
+      int64 max_sandboxes_per_workspace = 7;
+      // @inject_tag: bson:"max_sandbox_templates_per_workspace"
+      int64 max_sandbox_templates_per_workspace = 8;
+
+      // Running sessions
+      // @inject_tag: bson:"max_running_sessions_per_workspace"
+      int64 max_running_sessions_per_workspace = 9;
+
+      // Agents
+      // @inject_tag: bson:"max_agents_per_workspace"
+      int64 max_agents_per_workspace = 10;
+
+      // Storage pooled at workspace level (MB)
+      // @inject_tag: bson:"bonus_storage_mb_per_workspace"
+      int64 bonus_storage_mb_per_workspace = 11;
+      // @inject_tag: bson:"extra_storage_mb_per_user"
+      int64 extra_storage_mb_per_user = 12;
+
+      // File upload
+      // @inject_tag: bson:"max_file_size_mb"
+      int64 max_file_size_mb = 13;
+
+      // Feature capability gates
+      // @inject_tag: bson:"features"
+      Features features = 14;
+    }
+    oneof config {
+      NwebAIConfig nweb_ai = 1;
+      RetaskConfig retask = 2;
+    }
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string subscription_plan_id = 1;
+  // @inject_tag: bson:"type"
+  Type type = 2;
+  // @inject_tag: bson:"name"
+  string name = 3;
+  // @inject_tag: bson:"description"
+  string description = 4;
+  // @inject_tag: bson:"price"
+  common.v1.Price price = 5;
+  // @inject_tag: bson:"stripe_price_id"
+  string stripe_price_id = 6;
+  // @inject_tag: bson:"repeat"
+  Repeat repeat = 7;
+  // @inject_tag: bson:"features"
+  repeated string features = 8;
+  // @inject_tag: bson:"metadata"
+  Metadata metadata = 9;
+  // Product keys this plan is available for. Use ["*"] to allow all products.
+  // @inject_tag: bson:"allowed_product_keys"
+  repeated string allowed_product_keys = 10;
+  // @inject_tag: bson:"allowed_switch_plan_ids"
+  repeated string allowed_switch_plan_ids = 11;
+  // @inject_tag: bson:"highlight"
+  bool is_highlighted = 12;
+  // @inject_tag: bson:"disabled"
+  bool disabled = 13;
+  // @inject_tag: bson:"disabled_reason"
+  string disabled_reason = 14;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 15;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 16;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 17;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 18;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 19;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  common.v1.DeletionInfo deletion_info = 20;
+}
+
+message Subscription {
+  message Details {
+    // @inject_tag: bson:"subscription_plan"
+    SubscriptionPlan subscription_plan = 1;
+    // @inject_tag: bson:"total_seats"
+    uint64 total_seats = 2;
+    // @inject_tag: bson:"total_credits"
+    uint64 total_credits = 3;
+    // @inject_tag: bson:"price"
+    common.v1.Price price = 4;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string subscription_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"product_key"
+  string product_key = 3;
+  // @inject_tag: bson:"stripe_subscription_id"
+  string stripe_subscription_id = 4;
+  // @inject_tag: bson:"stripe_customer_id"
+  string stripe_customer_id = 5;
+  // @inject_tag: bson:"type"
+  SubscriptionPlan.Type type = 6;
+  // @inject_tag: bson:"name"
+  string name = 7;
+  // @inject_tag: bson:"started_at"
+  google.protobuf.Timestamp started_at = 8;
+  // @inject_tag: bson:"ended_at"
+  google.protobuf.Timestamp ended_at = 9;
+  // @inject_tag: bson:"cancellation_effective_at"
+  google.protobuf.Timestamp cancellation_effective_at = 10;
+  // @inject_tag: bson:"current_period_started_at"
+  google.protobuf.Timestamp current_period_started_at = 11;
+  // @inject_tag: bson:"current_period_ended_at"
+  google.protobuf.Timestamp current_period_ended_at = 12;
+  // Details should be accessible by workspace owners only
+  // @inject_tag: bson:"details"
+  Details details = 13;
+  // @inject_tag: bson:"next_subscription"
+  Subscription next_subscription = 14;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 15;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 16;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 17;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 18;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 19;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  common.v1.DeletionInfo deletion_info = 20;
+}

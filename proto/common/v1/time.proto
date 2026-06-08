@@ -1,0 +1,20 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message TimeFilter {
+  enum Operator {
+    // GT: greater than
+    GT = 0;
+    // GTE: greater than or equal
+    GTE = 1;
+    // LT: less than
+    LT = 2;
+    // LTE: less than or equal
+    LTE = 3;
+  }
+  Operator operator = 1;
+  google.protobuf.Timestamp value = 2;
+}

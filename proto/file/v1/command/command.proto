@@ -1,0 +1,12 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package file.v1.command;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+message DeleteFile {
+  string file_id = 1;
+  common.v1.Nrn requested_by_nrn = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}

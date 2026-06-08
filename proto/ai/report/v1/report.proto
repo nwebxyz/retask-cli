@@ -1,0 +1,54 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.report.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+
+service ReportService {
+  rpc GetCreditReports (CreditReportsRequest) returns (CreditReportsResponse) {
+    option (google.api.http) = {get: "/v1/reports/credit-reports"};
+  }
+}
+
+message CreditReportsRequest {
+  string workspace_id = 1;
+  repeated string user_ids = 2;
+  // Inclusive from time (>=from)
+  google.protobuf.Timestamp from = 3;
+  // Exclusive to time (<to)
+  google.protobuf.Timestamp to = 4;
+  bool include_credit_usage = 5;
+  bool include_per_ai_model = 6;
+  bool include_per_initiator = 7;
+  string timezone = 8;
+  // Maximum number of items per report, default (0) means no limit
+  int64 max_items_per_report = 9;
+}
+
+message CreditReport {
+  string credit_report_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp from = 3;
+  google.protobuf.Timestamp to = 4;
+  repeated string labels = 5;
+  repeated int64 values = 6;
+  int64 total = 7;
+}
+
+message CreditReportsResponse {
+  message Overview {
+    int64 total_granted_credits = 1;
+    int64 total_used_credits = 2;
+    int64 total_ai_models = 3;
+    int64 total_initiators = 4;
+    int64 total_threads = 5;
+    int64 total_messages = 6;
+  }
+  Overview overview = 1;
+  CreditReport credit_report = 2;
+  repeated CreditReport per_ai_model_reports = 3;
+  repeated CreditReport per_initiator_reports = 4;
+}

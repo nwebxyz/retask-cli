@@ -1,0 +1,18 @@
+// Copyright 2024 NWEB.xyz
+syntax = "proto3";
+package ai.ocr.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+message OcrTaskRunCompleted {
+  string ocr_task_run_id = 1;
+  string ocr_task_id = 2;
+  common.v1.Nrn runner_nrn = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp completed_at = 5;
+  bool is_success = 6;
+  string error_code = 7;
+  string error_message = 8;
+  uint64 cost_credits = 9;
+}

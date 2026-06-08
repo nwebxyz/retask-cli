@@ -1,0 +1,13 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.common.v1;
+
+enum SourceType {
+  UNKNOWN = 0;
+  JIRA = 1;
+  LINEAR = 2;
+  GITHUB = 3;
+  GITLAB = 4;
+  ASANA = 5;
+  TRELLO = 6;
+}

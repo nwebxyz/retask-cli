@@ -1,0 +1,62 @@
+syntax = "proto3";
+package ai_gateway.v1;
+
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "ai/agent/v1/agent.proto";
+
+// chat-service <=> AIGateway-service <=> AI services (ex: OpenAI, VertexAI, etc)
+service AIGatewayService {
+  rpc Chat(ChatRequest) returns (stream ChatResponse) {}
+}
+
+message Message {
+  enum SenderType {
+    UNKNOWN = 0;
+    HUMAN = 1;
+    AI = 2;
+  }
+  message ImageContent {
+    string filename = 1;
+    string mime_type = 2;
+    oneof source {
+      string ocr_content = 3;
+      string base64_data = 4;
+      string url = 5;
+    }
+  }
+
+  message FileContent {
+    string filename = 1;
+    string mime_type = 2;
+    string ocr_content = 3;
+  }
+
+  message Content {
+    oneof data {
+      string text = 1;
+      ImageContent image = 2;
+      FileContent file = 3;
+    }
+  }
+
+  string message_id = 1;
+  SenderType sender_type = 2;
+  repeated Content contents = 3;
+  common.v1.Nrn sender_nrn = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ChatRequest {
+  string request_id = 1;
+  ai.agent.v1.Agent agent = 2;
+  string system_message = 3;
+  repeated Message chat_history = 4;
+}
+
+message ChatResponse {
+  string request_id = 1;
+  string chunked_message = 3;
+}

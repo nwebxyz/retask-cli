@@ -1,0 +1,37 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package echo.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// Service
+service Echo {
+  rpc Echo (EchoRequest) returns (EchoResponse) {
+    option (google.api.http) = {
+      post: "/v1/echo/echo"
+      body: "*"
+    };
+  }
+  rpc Ping (PingRequest) returns (PingResponse) {
+    option (google.api.http) = {
+      get: "/v1/echo/ping"
+    };
+  }
+}
+
+message EchoRequest {
+  int64 delay = 1;
+  string message = 2;
+}
+message EchoResponse {
+  google.protobuf.Timestamp time = 1;
+  string message = 2;
+}
+
+message PingRequest {}
+message PingResponse {
+  string message = 1;
+  google.protobuf.Timestamp time = 2;
+}

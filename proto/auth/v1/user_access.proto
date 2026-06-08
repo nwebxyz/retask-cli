@@ -1,0 +1,19 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package auth.v1;
+
+// Per-caller access flags for an entity, computed server-side on read for
+// the authenticated user. Never persisted.
+//
+// Services that carry a role (workspace, project) wrap this message with
+// their own role enum (e.g. WorkspaceUserAccess, ProjectUserAccess) so the
+// role is returned alongside the action flags. Sharing-based entities
+// (sandbox, session, template) and role-less entities (task) use this
+// message directly.
+//
+// can_view is intentionally omitted: if the server returned the entity,
+// the caller can view it.
+message UserAccess {
+  bool can_edit   = 1;
+  bool can_delete = 2;
+}

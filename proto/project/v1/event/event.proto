@@ -1,0 +1,24 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package project.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+option go_package = "nweb.xyz/go/api-contracts-gen/project/v1/event";
+
+message ProjectCreated {
+  string project_id                     = 1;
+  string workspace_id                   = 2;
+  .common.v1.Nrn created_by_nrn         = 3;
+  google.protobuf.Timestamp created_at  = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
+
+message ProjectDeleted {
+  string project_id                     = 1;
+  string workspace_id                   = 2;
+  .common.v1.Nrn deleted_by_nrn         = 3;
+  google.protobuf.Timestamp deleted_at  = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}

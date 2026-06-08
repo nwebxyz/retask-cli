@@ -1,0 +1,17 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package workspace.v1.command;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "workspace/v1/workspace.proto";
+
+message NewWorkspaceMember {
+  string workspace_id = 1;
+  workspace.v1.WorkspaceMemberRole role = 2;
+  string display_name = 3;
+  workspace.v1.MemberProfile member_profile = 4;
+  common.v1.Nrn user_nrn = 5;
+  common.v1.Nrn triggered_by_nrn = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+}

@@ -1,0 +1,16 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package quota.v1.command;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+// Instructs QuotaService to reset a specific quota.
+// Used by both cron auto-reset and manual ResetQuotaUsage RPC.
+// initiator_nrn is a service account NRN for cron-triggered resets,
+// or the authenticated caller's NRN for manual resets.
+message ResetQuota {
+  string        quota_id      = 1;
+  common.v1.Nrn initiator_nrn = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}

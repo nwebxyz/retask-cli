@@ -1,0 +1,42 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package public.v1;
+
+import "google/api/annotations.proto";
+import "common/v1/common.proto";
+import "workspace/v1/workspace.proto";
+
+// PublicService is the single home for unauthenticated, email-link-driven
+// RPCs. Every RPC on this service is reachable without a Firebase JWT;
+// every other service keeps its Firebase-authed gateway posture untouched.
+//
+// See docs/architecture/public-service.md for design.
+service PublicService {
+  rpc GetWorkspaceInvitation(WorkspaceInvitationRequest) returns (WorkspaceInvitation) {
+    option (google.api.http) = {get: "/v1/public/workspaces/{workspace_id}/invitations/{invitation_id}"};
+  }
+  rpc DeclineWorkspaceInvitation(WorkspaceInvitationRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {post: "/v1/public/workspaces/{workspace_id}/invitations/{invitation_id}:decline"};
+  }
+}
+
+message WorkspaceInvitationRequest {
+  string workspace_id = 1;
+  // Maps to workspace.v1.WorkspaceMember.workspace_member_id. Public-facing
+  // name is "invitation" because a PENDING member is, for the unauth caller,
+  // an invitation.
+  string invitation_id = 2;
+}
+
+message WorkspaceInvitation {
+  message Workspace {
+    string workspace_id = 1;
+    string name = 2;
+    string color = 3;
+  }
+
+  string invitation_id = 1;
+  workspace.v1.MembershipStatus status = 2;
+  string invited_email = 3;
+  Workspace workspace = 4;
+}

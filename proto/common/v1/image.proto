@@ -1,0 +1,14 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+message Image {
+  // @inject_tag: bson:"url"
+  string url = 1;
+  // @inject_tag: bson:"height"
+  uint32 height = 2;
+  // @inject_tag: bson:"width"
+  uint32 width = 3;
+  // @inject_tag: bson:"alt_text"
+  string alt_text = 4;
+}

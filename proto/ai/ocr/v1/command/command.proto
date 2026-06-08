@@ -1,0 +1,20 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.ocr.v1.command;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "ai/ocr/v1/ocr_task.proto";
+
+message NewFileOcr {
+  string file_id = 1;
+  string workspace_id = 2;
+  common.v1.Nrn created_by_nrn = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message NewOcrTask {
+  ai.ocr.v1.OcrTask task = 1;
+  common.v1.Nrn scheduled_by_nrn = 2;
+  google.protobuf.Timestamp scheduled_at = 3;
+}

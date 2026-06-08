@@ -1,0 +1,144 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.credit.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+
+message CreditWallet {
+  enum Status {
+    ACTIVE = 0;
+    SUSPENDED = 1;
+    CLOSED = 3;
+  }
+  // @inject_tag: bson:"_id,omitempty"
+  string credit_wallet_id = 1;
+  // @inject_tag: bson:"owner_nrn"
+  common.v1.Nrn owner_nrn = 2;
+  // @inject_tag: bson:"status"
+  Status status = 3;
+  // @inject_tag: bson:"allowed_overdraft_amount"
+  uint64 allowed_overdraft_amount = 4;
+  //  Account balance also includes the overdraft amount
+  // @inject_tag: bson:"balance_amount"
+  int64 balance_amount = 5;
+  // @inject_tag: bson:"balance_updated_at"
+  google.protobuf.Timestamp balance_updated_at = 6;
+
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 7;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 8;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 9;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 10;
+  // @inject_tag: bson:"active_grant_amount"
+  int64 active_grant_amount = 11;
+}
+
+enum CreditType {
+  //  REQUEST: Users request credit for a specific purpose, ex: chat with LLMs
+  REQUEST = 0;
+  //  SUBSCRIPTION: Credits come from a subscription plan
+  SUBSCRIPTION = 1;
+  //  PAYMENT: Credits come from a one-time payment
+  PAYMENT = 2;
+  //  BONUS: Credits come from a bonus (ex: referral bonus, starting bonus...)
+  BONUS = 3;
+  //  ADJUSTMENT: Credits come from an adjustment (ex: refund, manual adjustment, overdraft...)
+  ADJUSTMENT = 4;
+  //  EXPIRATION: Credits was expired
+  EXPIRATION = 5;
+}
+
+message CreditsRequest {
+  // @inject_tag: bson:"request_id"
+  string request_id = 1;
+  // @inject_tag: bson:"wallet_owner_nrn"
+  common.v1.Nrn wallet_owner_nrn = 2;
+  // @inject_tag: bson:"initiator_nrn"
+  common.v1.Nrn initiator_nrn = 3;
+  // @inject_tag: bson:"requested_at"
+  google.protobuf.Timestamp requested_at = 4;
+  // @inject_tag: bson:"requested_amount"
+  uint64 requested_amount = 5;
+  // @inject_tag: bson:"metadata"
+  map<string, string> metadata = 6;
+}
+
+message ActiveCredit {
+  enum Status {
+    // REQUESTING: Credit is requesting. It will change to APPROVED when the credit is approved.
+    // System should calculate the balance of existing active credits, including REQUESTING and APPROVED credits.
+    REQUESTING = 0;
+    // APPROVED: Credit was approved.
+    // System will aggregate APPROVED credits to combine/delete these rows.
+    APPROVED = 1;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string active_credit_id = 1;
+  // @inject_tag: bson:"idempotency_key"
+  string idempotency_key = 2;
+  // @inject_tag: bson:"credit_wallet_id"
+  string credit_wallet_id = 3;
+  //  Original amount of credit, can be negative
+  // @inject_tag: bson:"original_amount"
+  int64 original_amount = 4;
+  //  Current active amount of credit, can be negative. This amount is used to calculate the balance of the wallet
+  // @inject_tag: bson:"active_amount"
+  int64 active_amount = 5;
+  // @inject_tag: bson:"valid_from"
+  google.protobuf.Timestamp valid_from = 6;
+  // @inject_tag: bson:"valid_to"
+  google.protobuf.Timestamp valid_to = 7;
+  // @inject_tag: bson:"type"
+  CreditType type = 8;
+  // @inject_tag: bson:"status"
+  Status status = 9;
+  // @inject_tag: bson:"request"
+  CreditsRequest request = 10;
+  // @inject_tag: bson:"paid_by_active_credit_ids"
+  repeated string paid_by_active_credit_ids = 11;
+  // @inject_tag: bson:"description"
+  string description = 12;
+
+  // @inject_tag: bson:"batch_id"
+  string batch_id = 13;
+  // @inject_tag: bson:"synced_at"
+  google.protobuf.Timestamp synced_at = 14;
+}
+
+message CreditTransaction {
+  // @inject_tag: bson:"_id,omitempty"
+  string credit_transaction_id = 1;
+  // @inject_tag: bson:"idempotency_key"
+  string idempotency_key = 2;
+  // @inject_tag: bson:"credit_wallet_id"
+  string credit_wallet_id = 3;
+  // @inject_tag: bson:"amount"
+  int64 amount = 4;
+  // @inject_tag: bson:"effective_at"
+  google.protobuf.Timestamp effective_at = 5;
+  // @inject_tag: bson:"valid_from"
+  google.protobuf.Timestamp valid_from = 6;
+  // @inject_tag: bson:"valid_to"
+  google.protobuf.Timestamp valid_to = 7;
+  // @inject_tag: bson:"type"
+  CreditType type = 8;
+  // @inject_tag: bson:"paid_by_transaction_ids"
+  repeated string paid_by_transaction_ids = 9;
+  // @inject_tag: bson:"description"
+  string description = 10;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 11;
+  // @inject_tag: bson:"request"
+  CreditsRequest request = 12;
+
+  //  Batch ID from cronjob process after aggregating ActiveCredit transactions.
+  //  We should not repopulate this transaction back to ActiveCredit.
+  // @inject_tag: bson:"batch_id"
+  string batch_id = 13;
+}

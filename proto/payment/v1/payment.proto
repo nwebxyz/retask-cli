@@ -1,0 +1,94 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package payment.v1;
+
+import "google/api/annotations.proto";
+import "common/v1/common.proto";
+import "subscription/v1/subscription.proto";
+
+
+service PaymentService {
+  rpc GetSubscriptionPlans (SubscriptionPlansRequest) returns (SubscriptionPlansResponse) {
+    option (google.api.http) = {get: "/v1/subscription-plans"};
+  }
+
+  rpc GetWorkspaceSubscription (WorkspaceSubscriptionRequest) returns (subscription.v1.Subscription) {
+    option (google.api.http) = {get: "/v1/subscriptions"};
+  }
+  rpc UpdateWorkspaceSubscription (UpdateWorkspaceSubscriptionRequest) returns (UpdateWorkspaceSubscriptionResponse) {
+    option (google.api.http) = {
+      post: "/v1/subscriptions"
+      body: "*"
+    };
+  }
+  rpc StopWorkspaceSubscriptionCancellation (StopWorkspaceSubscriptionCancellationRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {
+      post: "/v1/subscriptions:stop-cancellation"
+      body: "*"
+    };
+  }
+  rpc GetPortalSession (PortalSessionRequest) returns (PortalSessionResponse) {
+    option (google.api.http) = {get: "/v1/payments/portal-session"};
+  }
+
+  //  Following APIs should be used by BE calls only
+  rpc GetSubscription (common.v1.Id) returns (subscription.v1.Subscription) {}
+  rpc SetSubscription(subscription.v1.Subscription) returns (common.v1.Id) {}
+  rpc DeleteSubscription (common.v1.Id) returns (common.v1.Empty) {}
+}
+
+message SubscriptionPlansRequest {
+  string workspace_id = 1;
+  string product_key  = 2;
+}
+
+message SubscriptionPlansResponse {
+  repeated subscription.v1.SubscriptionPlan subscription_plans = 1;
+}
+
+message UpdateWorkspaceSubscriptionRequest {
+  string workspace_id         = 1;
+  string subscription_plan_id = 2;
+  uint64 extra_seats          = 3;
+  uint64 extra_credits        = 4;
+  string continue_url         = 5;
+  string product_key          = 6;
+}
+
+message UpdateWorkspaceSubscriptionResponse {
+  enum Status {
+    STATUS_PENDING = 0;
+    STATUS_SUCCESS = 1;
+    STATUS_FAILED  = 2;
+  }
+
+  enum ErrorCode {
+    ERROR_CODE_UNKNOWN     = 0;
+    ERROR_CODE_UNSUPPORTED = 1;
+  }
+
+  string    workspace_id         = 1;
+  string    product_key          = 2;
+  string    subscription_plan_id = 3;
+  Status    status               = 4;
+  string    message              = 5;
+  string    redirect_url         = 6;
+  ErrorCode error_code           = 7;
+}
+
+message PortalSessionRequest {
+  string return_url = 1;
+}
+message PortalSessionResponse {
+  string redirect_url = 1;
+}
+
+message StopWorkspaceSubscriptionCancellationRequest {
+  string workspace_id = 1;
+  string product_key  = 2;
+}
+
+message WorkspaceSubscriptionRequest {
+  string workspace_id = 1;
+  string product_key  = 2;
+}

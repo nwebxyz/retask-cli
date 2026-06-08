@@ -1,0 +1,14 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.sandbox.v1.command;
+
+import "google/protobuf/timestamp.proto";
+
+// Instructs SandboxService to record a runtime charge for a specific sandbox.
+// Records a new checkpoint on the SandboxRun collection and reduces the
+// sandboxRuntimeSecondsPerWorkspace quota for the workspace.
+message ChargeRuntime {
+  string sandbox_id   = 1;
+  string workspace_id = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+}

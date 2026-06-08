@@ -1,0 +1,13 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package payment.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "subscription/v1/subscription.proto";
+
+message StripeSubscriptionChanged {
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  string stripe_subscription_id = 3;
+}

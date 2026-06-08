@@ -1,0 +1,47 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package cron.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+
+
+// Service
+service CronService {
+  // Cron's APIs
+  rpc SetCron(Cron) returns (common.v1.Id) {}
+  rpc DeleteCrons (common.v1.Ids) returns (common.v1.Summary) {}
+}
+
+message Cron {
+  // @inject_tag: bson:"_id,omitempty"
+  string cron_id = 1;
+  // @inject_tag: bson:"name"
+  string name = 2;
+  // @inject_tag: bson:"cron"
+  string cron = 3;
+  // @inject_tag: bson:"timezone"
+  string timezone = 4;
+  // @inject_tag: bson:"target_id"
+  string target_id = 5;
+  // @inject_tag: bson:"target_pubsub_project_id"
+  string target_pubsub_project_id = 6;
+  // @inject_tag: bson:"target_pubsub_topic"
+  string target_pubsub_topic = 7;
+  // @inject_tag: bson:"metadata"
+  map<string, string> metadata = 8;
+
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 9;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 10;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 11;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 12;
+  // @inject_tag: bson:"ended_at,omitempty"
+  google.protobuf.Timestamp ended_at = 13;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 14;
+}

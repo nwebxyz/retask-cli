@@ -1,0 +1,87 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package ai.credit.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "common/v1/time.proto";
+import "ai/credit/v1/credit.proto";
+
+
+service CreditService {
+
+  rpc GetCreditBalance (CreditBalanceRequest) returns (CreditBalanceResponse) {
+    option (google.api.http) = {get: "/v1/credit-balances"};
+  }
+  rpc GetCreditTransactions (CreditTransactionsRequest) returns (CreditTransactionsResponse) {
+    // Because HTTP GET method don't support to map filter.initiators, we use POST method instead
+    option (google.api.http) = {
+      post: "/v1/credit-transactions"
+      body: "*"
+    };
+  }
+
+  // Following methods should be used by the internal BE services only
+  rpc GetCreditWalletByOwner (common.v1.Nrn) returns (CreditWallet) {}
+  //  AuthorizeCredits check balance and reject if balance is not enough
+  //  It is used to request the credit to approve the transaction
+  rpc AuthorizeCredits (CreditsRequest) returns (CreditsResponse) {}
+  //  RecordCredits record the transaction and update the balance
+  //  It is used to record the transaction already happened.
+  rpc RecordCredits (CreditsRequest) returns (CreditsResponse) {}
+}
+
+
+message CreditsResponse {
+  enum Code {
+    // The response code is not known or wallet is not found.
+    UNKNOWN = 0;
+
+    // Enough credits to approve the request.
+    OK = 1;
+
+    // Insufficient credits to approve the request or the wallet is not active.
+    OVER_LIMIT = 2;
+  }
+
+  Code code = 1;
+  uint64 approved_amount = 2;
+  uint64 remaining_balance = 3;
+}
+
+message CreditBalanceRequest {
+  common.v1.Nrn owner_nrn = 1;
+}
+
+message CreditBalanceResponse {
+  common.v1.Nrn owner_nrn = 1;
+  int64 balance_amount = 2;
+  google.protobuf.Timestamp balance_as_of = 3;
+  int64 active_grant_amount = 4;
+}
+
+message CreditTransactionsRequest {
+  message Filter {
+    // owner_nrn is required
+    common.v1.Nrn owner_nrn = 1;
+    repeated common.v1.Nrn initiators = 2;
+    repeated CreditType types = 3;
+    common.v1.TimeFilter from = 4;
+    common.v1.TimeFilter to = 5;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    DATE_A = 1;
+    DATE_D = 2;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message CreditTransactionsResponse {
+  repeated CreditTransaction transactions = 1;
+}

@@ -1,0 +1,12 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.sandbox.v1.cron;
+
+import "google/protobuf/timestamp.proto";
+
+// Emitted by the cron scheduler to trigger a runtime charge scan for all running sandboxes.
+// SandboxService listens, finds all sandboxes with STATUS_RUNNING,
+// and emits retask.sandbox.v1.command.ChargeRuntime for each.
+message EmitChargeRuntimeCommandsOfAllRunningSandboxes {
+  google.protobuf.Timestamp occurred_at = 1;
+}

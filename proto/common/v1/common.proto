@@ -1,0 +1,73 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+import "common/v1/nrn.proto";
+import "google/protobuf/timestamp.proto";
+
+enum YesNo {
+  UNKNOWN = 0;
+  Y = 1;
+  N = 2;
+}
+enum Sort {
+  DEFAULT = 0;
+  PRIORITY = 1;
+  NAME_A = 2;
+  NAME_D = 3;
+  DATE_A = 4;
+  DATE_D = 5;
+}
+message Empty {}
+service EmptyService {}
+message Id {
+  string id = 1;
+}
+message NullableId {
+  string id = 1;
+}
+message Ids {
+  repeated string ids = 1;
+}
+message Name {
+  string name = 1; // Item name
+}
+message Summary {
+  repeated string success_ids = 1;
+  repeated string fail_ids = 2;
+}
+message Count {
+  uint64 count = 1;
+}
+message Pagination {
+  uint64 offset = 1;
+  uint64 limit = 2;
+}
+
+// While MongoDB support offset and limit mainly, we can migrate to cursor pagination on use cases if needed.
+message CursorPagination {
+  message Request {
+    string next_cursor = 1;
+    uint64 limit = 2;
+  }
+  message Response {
+    string previous_cursor = 1;
+    string next_cursor = 2;
+    bool has_next = 3;
+  }
+}
+message PartialData {
+  string id = 1;
+  // If data have many levels, key should be seperated by (".")
+  // Example of price: price.amount, price.currency_code
+  map<string, string> data = 2;
+}
+message ServiceStatus {
+  string name = 1;
+  bool ok = 2;
+  string version = 3;
+}
+message Icon {
+  string url = 1;
+  string background_color = 2;
+}

@@ -1,0 +1,27 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+import "common/v1/nrn.proto";
+
+// DeletionInfo captures why a soft-deleted document was deleted.
+// Embedded in every entity that supports soft-delete alongside the is_deleted flag.
+message DeletionInfo {
+  enum Source {
+    UNKNOWN = 0;
+    USER = 1;      // deleted directly via a DeleteX RPC
+    CASCADE = 2;   // deleted because a parent resource was deleted; see parent_nrn
+  }
+
+  // @inject_tag: bson:"source"
+  Source source = 1;
+
+  // NRN of the parent resource whose deletion cascaded here.
+  // Set when source = CASCADE; empty for USER.
+  // @inject_tag: bson:"parent_nrn"
+  Nrn parent_nrn = 2;
+
+  // Optional free-text note for debugging/audit.
+  // @inject_tag: bson:"note,omitempty"
+  string note = 3;
+}

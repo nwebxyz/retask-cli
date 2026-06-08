@@ -1,0 +1,38 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package workspace.v1.event;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+import "workspace/v1/workspace.proto";
+
+message WorkspaceCreated {
+  string workspace_id = 1;
+  common.v1.Nrn created_by_nrn = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}
+
+message WorkspaceMemberUpdated {
+  string workspace_member_id = 1;
+  string workspace_id = 2;
+  common.v1.Nrn updated_by_nrn = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  workspace.v1.WorkspaceMember new_workspace_member = 5;
+  workspace.v1.MembershipStatus old_membership_status = 6;
+}
+
+message WorkspaceMemberDeleted {
+  string workspace_member_id = 1;
+  string workspace_id        = 2;
+  common.v1.Nrn deleted_by_nrn  = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  common.v1.Nrn member_user_nrn = 5;
+}
+
+message WorkspaceDeleted {
+  string workspace_id = 1;
+  common.v1.Nrn deleted_by_nrn = 2;
+  google.protobuf.Timestamp deleted_at = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}

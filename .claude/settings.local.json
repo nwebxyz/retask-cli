@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(gh pr *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git checkout *)",
+      "Bash(protoc --proto_path=proto --descriptor_set_out=/dev/null proto/*)",
+      "Bash(gh api *)",
+      "Bash(buf build *)",
+      "Bash(buf ls-files *)",
+      "Bash(git commit *)",
+      "Bash(git *)",
+      "Bash(gh *)"
+    ]
+  }
+}

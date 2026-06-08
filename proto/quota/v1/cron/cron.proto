@@ -1,0 +1,12 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package quota.v1.cron;
+
+import "google/protobuf/timestamp.proto";
+
+// Emitted by the cron scheduler to trigger a scan of all due quota resets.
+// QuotaService listens, finds all quotas with any unit's reset_quota_at <= now,
+// and emits quota.v1.command.ResetQuota for each.
+message EmitResetQuotaCommandsOfAllDueQuotas {
+  google.protobuf.Timestamp occurred_at = 1;
+}

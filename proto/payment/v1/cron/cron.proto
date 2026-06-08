@@ -1,0 +1,12 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package payment.v1.cron;
+
+import "google/protobuf/timestamp.proto";
+
+// Emitted by the cron scheduler to trigger a seats sync for all paid subscriptions.
+// PaymentService listens, fetches all subscriptions with a stripe_subscription_id,
+// and emits payment.v1.command.SyncSubscriptionSeats for each.
+message EmitSyncSeatsCommandsOfAllPaidSubscriptions {
+  google.protobuf.Timestamp occurred_at = 1;
+}

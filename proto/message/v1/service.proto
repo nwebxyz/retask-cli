@@ -1,0 +1,42 @@
+// Copyright 2024 NWEB.xyz
+syntax = "proto3";
+package message.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/api/annotations.proto";
+import "common/v1/common.proto";
+
+
+// MessageService receives messages directly from PubSub Subscription with push endpoint.
+service MessageService {
+  rpc PushEvent (PushRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {
+      post: "/messages/v1/push-event"
+      body: "*"
+    };
+  }
+  rpc PushCommand (PushRequest) returns (common.v1.Empty) {
+    option (google.api.http) = {
+      post: "/messages/v1/push-command"
+      body: "*"
+    };
+  }
+}
+
+message PushRequest {
+  PubsubMessage message = 1;
+  string subscription = 2;
+}
+
+// PubsubMessage is following the structure of PubSub message
+// (https://cloud.google.com/pubsub/docs/reference/rest/v1/PubsubMessage)
+message PubsubMessage {
+  bytes data = 1;
+  map<string, string> attributes = 2;
+  string messageId = 3;
+  google.protobuf.Timestamp publishTime = 4;
+  string orderingKey = 5;
+
+  //  Note: tried to rename "orderingKey" (and other fields) to "ordering_key" format with "@inject_tag: json:"orderingKey,omitempty"
+  //  but it doesn't work because GRPC Gateway can't parse the PUSH request from PubSub
+}

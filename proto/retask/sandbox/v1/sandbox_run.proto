@@ -1,0 +1,53 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.sandbox.v1;
+
+import "google/protobuf/timestamp.proto";
+import "retask/sandbox/v1/sandbox.proto";
+
+option go_package = "nweb.xyz/go/api-contracts-gen/retask/sandbox/v1";
+
+// SandboxRun records one continuous period when the sandbox was STATUS_RUNNING.
+// It is the source of truth for runtime and billing — do NOT derive runtime from
+// Sandbox.Stats. Records are append-only (no soft-delete).
+message SandboxRun {
+  // @inject_tag: bson:"_id,omitempty"
+  string sandbox_run_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"sandbox_id"
+  string sandbox_id = 3;
+
+  // Snapshot of machine_type at run start — preserved even if the sandbox
+  // config changes after the run begins.
+  // @inject_tag: bson:"machine_type,omitempty"
+  .retask.sandbox.v1.Sandbox.MachineType machine_type = 4;
+
+  // @inject_tag: bson:"started_at"
+  google.protobuf.Timestamp started_at = 5;
+  // Nil while the run is still in progress.
+  // @inject_tag: bson:"stopped_at,omitempty"
+  google.protobuf.Timestamp stopped_at = 6;
+
+  // Settled runtime in seconds, accurate up to checkpoint_at.
+  // While stopped_at is nil, live total = total_runtime_seconds + (now − checkpoint_at).
+  // @inject_tag: bson:"total_runtime_seconds"
+  uint32 total_runtime_seconds = 7;
+
+  // Charged runtime in seconds for billing. May be a multiplier of
+  // total_runtime_seconds based on machine_type (x1, x2, or xN per tier).
+  // Only reliable once stopped_at is set.
+  // @inject_tag: bson:"charged_runtime_seconds"
+  uint32 charged_runtime_seconds = 8;
+
+  // Last time this record was written (by event handler or cron).
+  // Accumulation anchor: total_runtime_seconds += (now − checkpoint_at) on each
+  // event or cron tick while the run is open (stopped_at nil).
+  // @inject_tag: bson:"checkpoint_at"
+  google.protobuf.Timestamp checkpoint_at = 9;
+
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 10;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 11;
+}
