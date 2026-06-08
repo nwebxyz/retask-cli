@@ -8,6 +8,7 @@ APPROVED_SERVICES=(
   "file/v1"
   "integration/v1"
   "project/v1"
+  "quota/v1"
   "retask/agent/v1"
   "retask/common/v1"
   "retask/project/v1"
