@@ -1,0 +1,290 @@
+syntax = "proto3";
+package quota.v1;
+
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "google/protobuf/timestamp.proto";
+
+// Service
+service QuotaService {
+  // Check APIs
+  rpc ShouldQuotaLimit(QuotaRequest) returns (QuotaResponse) {}
+  rpc ResetUnusedQuota(QuotaRequest) returns (QuotaResponse) {}
+
+  // Quota management APIs
+  rpc SetQuota(QuotaConfig) returns (common.v1.Id) {}
+  rpc GetQuotas(QuotasRequest) returns (Quotas) {}
+  rpc GetQuota(common.v1.Id) returns (Quota) {}
+  rpc DeleteQuota(common.v1.Id) returns (common.v1.Empty) {}
+  rpc ResetQuotaUsage(common.v1.Id) returns (common.v1.Empty) {}
+
+  rpc SetQuotaLimits(QuotaLimitsConfig) returns (common.v1.Empty) {}
+
+  // Event log APIs
+  rpc GetQuotaEvents(QuotaEventsRequest) returns (QuotaEvents) {}
+}
+
+// Period defines the time period over which quota is tracked and reset
+enum Period {
+  UNKNOWN = 0;
+  DAY = 1;
+  WEEK = 2;
+  MONTH = 3;
+  YEAR = 4;
+  FOREVER = 5;
+}
+
+// QuotaStrategy controls how units are evaluated and deducted during a quota check.
+enum QuotaStrategy {
+  // Default. All units must pass: hits_addend is deducted from every unit.
+  // Returns OK only if all units have sufficient remaining quota.
+  // remaining_quota in response = min remaining across all units.
+  QUOTA_STRATEGY_ALL = 0;
+
+  // Units are drained in declaration order. hits_addend fills the first unit,
+  // then spills into subsequent units until satisfied.
+  // Returns OK if total remaining across all units >= hits_addend.
+  // remaining_quota in response = sum of remaining across all units after deduction.
+  QUOTA_STRATEGY_WATERFALL = 1;
+}
+
+message QuotaRequest {
+  string name = 1;
+  string target = 2;
+  // Value > 0: Check and set limit hits
+  // Value = 0: No affect to limits, useful for checking remaining hits
+  uint64 hits_addend = 3;
+  // If true and quota is OVER_LIMIT, it still claims most remaining quota
+  // and returns "approved_quota" for what it can claim.
+  bool claim_most_remaining_quota = 4;
+  common.v1.Nrn caller_nrn = 5;
+  bool track_history = 6;
+}
+
+message QuotaResponse {
+  enum Code {
+    UNKNOWN = 0;
+    OK = 1;
+    OVER_LIMIT = 2;
+  }
+
+  Code code = 1;
+  uint64 approved_quota = 2;
+  uint64 remaining_quota = 3;
+}
+
+// QuotaLimitsConfig is the input for SetQuotaLimits — targeted per-unit limit update on an existing quota.
+// 0 means no change for both limit fields.
+message QuotaLimitsConfig {
+  message UnitLimit {
+    Period period = 1;
+    uint64 limit_quota = 2; // 0 = no change
+    uint64 next_limit_quota = 3; // 0 = no change
+    google.protobuf.Timestamp expires_at = 4; // optional; null = no change
+  }
+
+  string quota_id = 1;
+  repeated UnitLimit unit_limits = 2;
+  QuotaStrategy strategy = 3;
+}
+
+// QuotaConfig is the input message for SetQuota. Not stored as-is.
+// The system finds existing quota by (name, target) composite key for upsert.
+message QuotaConfig {
+  message Unit {
+    Period period = 1;
+    uint64 limit_quota = 2;
+    google.protobuf.Timestamp expires_at = 3; // optional; empty = never expires
+  }
+
+  string name = 1;
+  string target = 2;
+  repeated Unit units = 3;
+
+  // default_units only used when target = "__newDynamicTarget__".
+  // Defines the unit values for dynamically-created quotas.
+  repeated Unit default_units = 4;
+
+  QuotaStrategy strategy = 5;
+}
+
+// Quota is the stored entity, returned by GetQuota/GetQuotas.
+message Quota {
+  message Unit {
+    // @inject_tag: bson:"period"
+    Period period = 1;
+    // @inject_tag: bson:"limit_quota"
+    uint64 limit_quota = 2;
+    // @inject_tag: bson:"used_quota"
+    uint64 used_quota = 3;
+    // @inject_tag: bson:"remaining_quota"
+    uint64 remaining_quota = 4;
+    // @inject_tag: bson:"reset_quota_at"
+    google.protobuf.Timestamp reset_quota_at = 5;
+    // If set, replaces limit_quota at the next period reset (deferred change).
+    // @inject_tag: bson:"next_limit_quota"
+    uint64 next_limit_quota = 6;
+    // @inject_tag: bson:"expires_at,omitempty"
+    google.protobuf.Timestamp expires_at = 7; // optional; empty = never expires
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string quota_id = 1;
+  // @inject_tag: bson:"origin_quota_id"
+  string origin_quota_id = 2;
+  // @inject_tag: bson:"name"
+  string name = 3;
+  // @inject_tag: bson:"target"
+  string target = 4;
+  // @inject_tag: bson:"units"
+  repeated Unit units = 5;
+  // @inject_tag: bson:"default_units"
+  repeated Unit default_units = 6;
+
+  // @inject_tag: bson:"used_quota_at"
+  google.protobuf.Timestamp used_quota_at = 7;
+  // @inject_tag: bson:"reset_quota_at"
+  google.protobuf.Timestamp reset_quota_at = 8;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 9;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 10;
+
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 11;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 12;
+  // @inject_tag: bson:"strategy"
+  QuotaStrategy strategy = 13;
+}
+
+message Quotas {
+  repeated Quota quotas = 1;
+}
+
+message QuotaEvent {
+  enum EventType {
+    EVENT_TYPE_UNKNOWN = 0;
+    EVENT_TYPE_USE = 1; // ShouldQuotaLimit called
+    EVENT_TYPE_RESET = 2; // period expired or manual ResetQuotaUsage
+    EVENT_TYPE_ADJUST = 3; // manual admin adjustment of limit or used_quota
+    EVENT_TYPE_SET = 4; // SetQuota (create or update config)
+    EVENT_TYPE_DELETE = 5; // DeleteQuota
+  }
+
+  message UseInfo {
+    // @inject_tag: bson:"hits_addend"
+    uint64 hits_addend = 1;
+    // @inject_tag: bson:"approved_quota"
+    uint64 approved_quota = 2;
+    // @inject_tag: bson:"remaining_quota"
+    uint64 remaining_quota = 3;
+    // @inject_tag: bson:"result"
+    QuotaResponse.Code result = 4;
+    // @inject_tag: bson:"unit_snapshots"
+    repeated Quota.Unit unit_snapshots = 5;
+  }
+
+  message ResetInfo {
+    enum Trigger {
+      TRIGGER_MANUAL = 0; // via ResetQuotaUsage RPC or ResetQuota command with user NRN
+      TRIGGER_AUTO_PERIOD = 1; // cron-triggered, period expired
+    }
+    // @inject_tag: bson:"trigger"
+    Trigger trigger = 1;
+    // @inject_tag: bson:"period"
+    Period period = 2; // which period expired (AUTO_PERIOD only)
+    // @inject_tag: bson:"before_unit_snapshots"
+    repeated Quota.Unit before_unit_snapshots = 3;
+    // @inject_tag: bson:"after_unit_snapshots"
+    repeated Quota.Unit after_unit_snapshots = 4;
+  }
+
+  message AdjustInfo {
+    enum Field {
+      FIELD_LIMIT = 0; // limit_quota was changed
+      FIELD_USED = 1; // used_quota was changed
+    }
+    // @inject_tag: bson:"field"
+    Field field = 1;
+    // @inject_tag: bson:"period"
+    Period period = 2;
+    // @inject_tag: bson:"delta"
+    int64 delta = 3; // positive = increase, negative = decrease
+    // @inject_tag: bson:"before_value"
+    uint64 before_value = 4;
+    // @inject_tag: bson:"after_value"
+    uint64 after_value = 5;
+    // @inject_tag: bson:"note"
+    string note = 6; // internal message explaining why
+  }
+
+  message SetInfo {
+    // @inject_tag: bson:"before_units"
+    repeated Quota.Unit before_units = 1; // empty if quota is newly created
+    // @inject_tag: bson:"after_units"
+    repeated Quota.Unit after_units = 2;
+  }
+
+  message DeleteInfo {
+    // @inject_tag: bson:"final_unit_snapshots"
+    repeated Quota.Unit final_unit_snapshots = 1;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string quota_event_id = 1;
+  // @inject_tag: bson:"quota_id"
+  string quota_id = 2;
+  // @inject_tag: bson:"name"
+  string name = 3;
+  // @inject_tag: bson:"target"
+  string target = 4;
+  // @inject_tag: bson:"caller_nrn"
+  common.v1.Nrn caller_nrn = 5; // for RESET events: populated from ResetQuota.initiator_nrn
+  // @inject_tag: bson:"event_type"
+  EventType event_type = 6;
+
+  // exactly one of these is set, determined by event_type
+  // @inject_tag: bson:"use_info,omitempty"
+  UseInfo use_info = 7;
+  // @inject_tag: bson:"reset_info,omitempty"
+  ResetInfo reset_info = 8;
+  // @inject_tag: bson:"adjust_info,omitempty"
+  AdjustInfo adjust_info = 9;
+  // @inject_tag: bson:"set_info,omitempty"
+  SetInfo set_info = 10;
+  // @inject_tag: bson:"delete_info,omitempty"
+  DeleteInfo delete_info = 11;
+
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message QuotaEvents {
+  repeated QuotaEvent quota_events = 1;
+}
+
+message QuotasRequest {
+  message Filter {
+    repeated string quota_ids = 1;
+    string name = 2;
+    string target = 3;
+    Period period = 4;
+  }
+  Filter filter = 1;
+  common.v1.Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message QuotaEventsRequest {
+  message Filter {
+    repeated string quota_event_ids = 1;
+    string name = 2;
+    string target = 3;
+    string quota_id = 4;
+    repeated QuotaEvent.EventType event_types = 5;
+  }
+  Filter filter = 1;
+  common.v1.Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}

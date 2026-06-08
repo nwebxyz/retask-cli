@@ -1,3 +1,4 @@
+# buf.gen.yaml
 version: v2
 managed:
   enabled: true
@@ -6,14 +7,14 @@ managed:
       module: buf.build/googleapis/googleapis
   override:
     - file_option: go_package_prefix
-      value: nweb.xyz/go/api-contracts-gen
+      value: nweb.xyz/retask-cli/proto-gen
 plugins:
   - remote: buf.build/protocolbuffers/go:v1.30.0
-    out: api-contracts-gen
+    out: proto-gen
     opt: paths=source_relative
   - remote: buf.build/grpc/go:v1.3.0
-    out: api-contracts-gen
+    out: proto-gen
     opt: paths=source_relative
   - remote: buf.build/grpc-ecosystem/gateway:v2.16.0
-    out: api-contracts-gen
+    out: proto-gen
     opt: paths=source_relative
