@@ -10,6 +10,7 @@ import (
 	authcmd "nweb.xyz/retask-cli/internal/cmd/auth"
 	customercmd "nweb.xyz/retask-cli/internal/cmd/customer"
 	filecmd "nweb.xyz/retask-cli/internal/cmd/file"
+	helpcmd "nweb.xyz/retask-cli/internal/cmd/helpcmd"
 	integrationcmd "nweb.xyz/retask-cli/internal/cmd/integration"
 	projectcmd "nweb.xyz/retask-cli/internal/cmd/project"
 	projectconfigcmd "nweb.xyz/retask-cli/internal/cmd/projectconfig"
@@ -64,6 +65,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(authcmd.NewCommand(gf))
 	root.AddCommand(customercmd.NewCommand(gf))
 	root.AddCommand(filecmd.NewCommand(gf))
+	root.AddCommand(helpcmd.NewCommand(gf))
 	root.AddCommand(integrationcmd.NewCommand(gf))
 	root.AddCommand(projectcmd.NewCommand(gf))
 	root.AddCommand(projectconfigcmd.NewCommand(gf))
