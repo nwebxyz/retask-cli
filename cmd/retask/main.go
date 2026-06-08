@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	agentcmd "nweb.xyz/retask-cli/internal/cmd/agent"
 	authcmd "nweb.xyz/retask-cli/internal/cmd/auth"
 	customercmd "nweb.xyz/retask-cli/internal/cmd/customer"
 	filecmd "nweb.xyz/retask-cli/internal/cmd/file"
@@ -59,6 +60,7 @@ func newRootCommand() *cobra.Command {
 	root.SetVersionTemplate(fmt.Sprintf("retask version %s\n", version.Version))
 
 	// Service commands registered here — add one line per new service
+	root.AddCommand(agentcmd.NewCommand(gf))
 	root.AddCommand(authcmd.NewCommand(gf))
 	root.AddCommand(customercmd.NewCommand(gf))
 	root.AddCommand(filecmd.NewCommand(gf))
