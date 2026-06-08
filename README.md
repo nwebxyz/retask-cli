@@ -1,4 +1,4 @@
-# retask
+# retask-cli
 
 A command-line interface for [Retask.work](https://retask.work) — manage workspaces, projects, tasks, sandboxes, agents, and more directly from your terminal or scripts.
 
