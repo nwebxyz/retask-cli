@@ -37,7 +37,7 @@ retask-cli/
 │       ├── file/                    # retask file ...
 │       ├── integration/             # retask integration ...
 │       ├── project/                 # retask project ...
-│       ├── retaskproject/           # retask retask-project ...
+│       ├── projectconfig/           # retask project-config ...
 │       ├── sandbox/                 # retask sandbox ...
 │       ├── agent/                   # retask agent ...
 │       ├── task/                    # retask task ...
@@ -254,9 +254,9 @@ retask
 │   ├── delete <id>
 │   ├── attachment add <task-id> <file-id>
 │   └── attachment remove <task-id> <file-id>
-├── retask-project
-│   ├── config get <project-id>
-│   └── config set <project-id> [--task-statuses] [--task-types] [--default-view]
+├── project-config
+│   ├── get <project-id>
+│   └── set <project-id> [--task-statuses] [--task-types] [--default-view]
 ├── sandbox
 │   ├── list [--status] [--type]
 │   ├── get <id>
@@ -299,7 +299,7 @@ root.AddCommand(
     file.NewCommand(),
     integration.NewCommand(),
     task.NewCommand(),
-    retaskproject.NewCommand(),
+    projectconfig.NewCommand(),
     sandbox.NewCommand(),
     agent.NewCommand(),
 )
