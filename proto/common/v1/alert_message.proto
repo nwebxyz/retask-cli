@@ -1,0 +1,25 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+import "common/v1/nrn.proto";
+import "google/protobuf/timestamp.proto";
+
+message AlertMessage {
+  enum Severity {
+    INFO = 0;
+    SUCCESS = 1;
+    WARNING = 2;
+    ERROR = 3;
+  }
+  // @inject_tag: bson:"severity"
+  Severity severity = 1;
+  // @inject_tag: bson:"message"
+  string message = 2;
+  // @inject_tag: bson:"metadata"
+  map<string, string> metadata = 3;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 4;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 5;
+}

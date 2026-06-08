@@ -1,0 +1,125 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.project.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "common/v1/soft_delete.proto";
+import "retask/common/v1/source.proto";
+import "retask/common/v1/types.proto";
+
+option go_package = "nweb.xyz/go/api-contracts-gen/retask/project/v1";
+
+service RetaskProjectService {
+  rpc GetProjectConfig(.common.v1.Id) returns (ProjectConfig) {
+    option (google.api.http) = {get: "/retask/v1/projects/{id}/config"};
+  }
+  rpc SetProjectConfig(ProjectConfig) returns (.common.v1.Id) {
+    option (google.api.http) = {
+      post: "/retask/v1/projects/{project_id}/config"
+      body: "*"
+    };
+  }
+
+  rpc GetExternalProjects(ExternalProjectsRequest) returns (ExternalProjectsResponse) {
+    option (google.api.http) = {get: "/retask/v1/projects/{project_id}/external-projects"};
+  }
+  rpc SetExternalProject(ExternalProject) returns (.common.v1.Id) {
+    option (google.api.http) = {
+      post: "/retask/v1/external-projects"
+      body: "*"
+    };
+  }
+  rpc DeleteExternalProject(.common.v1.Id) returns (.common.v1.Empty) {
+    option (google.api.http) = {delete: "/retask/v1/external-projects/{id}"};
+  }
+}
+
+message ProjectConfig {
+  // @inject_tag: bson:"_id,omitempty"
+  string project_id                              = 1;
+  // @inject_tag: bson:"task_statuses"
+  repeated retask.common.v1.TaskStatus task_statuses = 2;
+  // @inject_tag: bson:"task_types"
+  repeated retask.common.v1.TaskType   task_types    = 3;
+  // @inject_tag: bson:"created_by_nrn"
+  .common.v1.Nrn            created_by_nrn = 4;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at     = 5;
+  // @inject_tag: bson:"updated_by_nrn"
+  .common.v1.Nrn            updated_by_nrn = 6;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at     = 7;
+  // @inject_tag: bson:"is_deleted"
+  bool                    is_deleted    = 8;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  .common.v1.DeletionInfo deletion_info = 9;
+  // @inject_tag: bson:"kanban_config"
+  KanbanConfig kanban_config            = 10;
+  // @inject_tag: bson:"default_task_view"
+  TaskView     default_task_view        = 11;
+
+  enum TaskView {
+    TASK_VIEW_KANBAN = 0;
+    TASK_VIEW_TASKS  = 1;
+  }
+
+  message KanbanConfig {
+    // @inject_tag: bson:"columns"
+    repeated Column columns        = 1;
+    // @inject_tag: bson:"hide_done_after_days"
+    int32 hide_done_after_days     = 2;
+
+    message Column {
+      // @inject_tag: bson:"name"
+      string name                     = 1;
+      // @inject_tag: bson:"background_color"
+      string background_color         = 2;
+      // @inject_tag: bson:"task_status_ids"
+      repeated string task_status_ids = 3;
+    }
+  }
+}
+
+message ExternalProject {
+  // @inject_tag: bson:"_id,omitempty"
+  string external_project_id                   = 1;
+  // @inject_tag: bson:"project_id"
+  string project_id                            = 2;
+  // @inject_tag: bson:"source_type"
+  retask.common.v1.SourceType source_type      = 3;
+  // @inject_tag: bson:"source_id"
+  string source_id                             = 4;
+  // @inject_tag: bson:"source_url"
+  string source_url                            = 5;
+  // @inject_tag: bson:"name"
+  string name                                  = 6;
+  // @inject_tag: bson:"description"
+  string description                           = 7;
+  // @inject_tag: bson:"last_sync_at"
+  google.protobuf.Timestamp last_sync_at       = 8;
+  // @inject_tag: bson:"next_sync_at"
+  google.protobuf.Timestamp next_sync_at       = 9;
+  // @inject_tag: bson:"created_by_nrn"
+  .common.v1.Nrn            created_by_nrn    = 10;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at        = 11;
+  // @inject_tag: bson:"updated_by_nrn"
+  .common.v1.Nrn            updated_by_nrn    = 12;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at        = 13;
+  // @inject_tag: bson:"is_deleted"
+  bool                    is_deleted          = 14;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  .common.v1.DeletionInfo deletion_info       = 15;
+}
+
+message ExternalProjectsRequest {
+  string project_id = 1;
+}
+
+message ExternalProjectsResponse {
+  repeated ExternalProject external_projects = 1;
+}

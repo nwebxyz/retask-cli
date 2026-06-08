@@ -1,0 +1,13 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+// Resource Name (NRN) is a unique identifier for a resource in the NWEB ecosystem.
+// Ex: nweb:chat:model:openai-chatgpt-3.5
+// Values are separated by colons, only characters allowed are a-z, 0-9, and hyphens.
+message Nrn {
+  string domain = 1;           // e.g., "nweb"
+  string service = 2;          // e.g., "chat"
+  string resource_type = 3;     // e.g., "model"
+  string resource_id = 4;       // e.g., "openai-chatgpt-3.5"
+}

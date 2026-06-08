@@ -1,0 +1,33 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package auth.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+
+
+message User {
+  // @inject_tag: bson:"_id,omitempty"
+  string user_id = 1;
+  // @inject_tag: bson:"first_name"
+  string first_name = 2;
+  // @inject_tag: bson:"last_name"
+  string last_name = 3;
+  // @inject_tag: bson:"display_name"
+  string display_name = 4;
+  // @inject_tag: bson:"email"
+  string email = 5;
+  // @inject_tag: bson:"avatar"
+  string avatar = 6;
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 7;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 8;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 9;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 10;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 11;
+}

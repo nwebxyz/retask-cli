@@ -1,0 +1,19 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+message Address {
+  // @inject_tag: bson:"address1"
+  string address1 = 1;
+  // @inject_tag: bson:"address2"
+  string address2 = 2;
+  // @inject_tag: bson:"city"
+  string city = 3;
+  // @inject_tag: bson:"state"
+  string state = 4;
+  // @inject_tag: bson:"postcode"
+  string postcode = 5;
+  //  The two-letter code for the country of the address
+  // @inject_tag: bson:"country_code"
+  string country_code = 6;
+}

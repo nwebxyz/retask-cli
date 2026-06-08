@@ -1,0 +1,68 @@
+syntax = "proto3";
+package file.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "file/v1/file.proto";
+
+service FileService {
+  rpc GetFiles(FilesRequest) returns (FilesResponse) {
+    option (google.api.http) = {get: "/v1/files"};
+  }
+  rpc GetFile (common.v1.Id) returns (File) {
+    option (google.api.http) = {get: "/v1/files/{id}"};
+  }
+  rpc GetFileDetails (FileDetailsRequest) returns (File) {
+    option (google.api.http) = {get: "/v1/files/{file_id}/details"};
+
+  }
+  rpc DeleteFile (common.v1.Id) returns (common.v1.Empty) {
+    option (google.api.http) = {delete: "/v1/files/{id}"};
+  }
+  rpc GetFileSignedUrl (FileSignedUrlRequest) returns (FileSignedUrlResponse) {
+    option (google.api.http) = {post: "/v1/files/{file_id}/signed-url"};
+  }
+}
+
+message FilesRequest {
+  message Filter {
+    repeated string file_ids = 1;
+    string project_id = 2;
+    string thread_id = 3;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    DATE_A = 1;
+    DATE_D = 2;
+    SIZE_A = 3;
+    SIZE_D = 4;
+  }
+
+  Filter filter = 1;
+  Sort sort = 2;
+  common.v1.Pagination pagination = 3;
+}
+
+message FilesResponse {
+  repeated FileInfo files = 1;
+}
+
+message FileSignedUrlRequest {
+  string file_id = 1;
+  google.protobuf.Duration expires_in = 2;
+}
+
+message FileSignedUrlResponse {
+  string file_id = 1;
+  string signed_url = 2;
+  google.protobuf.Timestamp expires_at = 12;
+}
+
+message FileDetailsRequest {
+  string file_id = 1;
+  bool with_data = 2;
+  bool with_data_if_no_ocr = 3;
+  bool with_ocr_content = 4;
+}

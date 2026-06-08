@@ -1,0 +1,652 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package retask.sandbox.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+import "common/v1/nrn.proto";
+import "common/v1/soft_delete.proto";
+import "workspace/v1/sharing.proto";
+import "integration/v1/integration.proto";
+import "quota/v1/quota.proto";
+
+service SandboxService {
+  // === Sandbox CRUD ===
+  rpc GetSandboxes(SandboxesRequest) returns (SandboxesResponse) {
+    option (google.api.http) = {get: "/retask/v1/sandboxes"};
+  }
+  rpc GetSandbox(.common.v1.Id) returns (Sandbox) {
+    option (google.api.http) = {get: "/retask/v1/sandboxes/{id}"};
+  }
+  rpc SetSandbox(Sandbox) returns (.common.v1.Id) {
+    option (google.api.http) = {
+      post: "/retask/v1/sandboxes"
+      body: "*"
+    };
+  }
+  rpc StopSandbox(.common.v1.Id) returns (.common.v1.Empty) {
+    option (google.api.http) = {post: "/retask/v1/sandboxes/{id}:stop"};
+  }
+  rpc DeleteSandbox(.common.v1.Id) returns (.common.v1.Empty) {
+    option (google.api.http) = {delete: "/retask/v1/sandboxes/{id}"};
+  }
+
+  // === Session ===
+  rpc GetSessions(SessionsRequest) returns (SessionsResponse) {
+    option (google.api.http) = {get: "/retask/v1/sessions"};
+  }
+  rpc GetSession(.common.v1.Id) returns (Session) {
+    option (google.api.http) = {get: "/retask/v1/sessions/{id}"};
+  }
+  rpc NewSession(NewSessionRequest) returns (.common.v1.Id) {
+    option (google.api.http) = {
+      post: "/retask/v1/sessions"
+      body: "*"
+    };
+  }
+  rpc SetPartialSession(.common.v1.PartialData) returns (.common.v1.Id) {
+    option (google.api.http) = {
+      patch: "/retask/v1/sessions/{id}"
+      body: "*"
+    };
+  }
+  rpc ConnectSession(.common.v1.Id) returns (SessionConnectionResponse) {
+    option (google.api.http) = {post: "/retask/v1/sessions/{id}:connect"};
+  }
+  // BE-BE only (service-token auth). Returns the materialized runtime
+  // view for a session: the Session, its parent Sandbox, and
+  // Sandbox.Config with secret plaintext re-injected into
+  // EnvVar.SecretValue.value. The caller (sandbox proxy) is trusted
+  // to have already validated end-user authorization via the one-time
+  // connect token issued by ConnectSession.
+  rpc GetSessionRuntime(.common.v1.Id) returns (SessionRuntime) {
+    option (google.api.http) = {get: "/retask/v1/sessions/{id}:runtime"};
+  }
+  rpc StopSession(.common.v1.Id) returns (.common.v1.Empty) {
+    option (google.api.http) = {post: "/retask/v1/sessions/{id}:stop"};
+  }
+  rpc DeleteSession(.common.v1.Id) returns (.common.v1.Empty) {
+    option (google.api.http) = {delete: "/retask/v1/sessions/{id}"};
+  }
+  // BE-BE only (service-token auth). Called by proxy on any session status
+  // transition. Triggers async LLM extraction on IDLE and VM shutdown
+  // evaluation on TIMEOUT.
+  rpc ReportSessionStatus(ReportSessionStatusRequest) returns (.common.v1.Empty) {
+    option (google.api.http) = {
+      post: "/retask/v1/sessions/{session_id}:report-status"
+      body: "*"
+    };
+  }
+
+  // === SandboxTemplate CRUD ===
+  rpc GetSandboxTemplates(SandboxTemplatesRequest) returns (SandboxTemplatesResponse) {
+    option (google.api.http) = {get: "/retask/v1/sandbox-templates"};
+  }
+  rpc GetSandboxTemplate(.common.v1.Id) returns (SandboxTemplate) {
+    option (google.api.http) = {get: "/retask/v1/sandbox-templates/{id}"};
+  }
+  rpc SetSandboxTemplate(SandboxTemplate) returns (.common.v1.Id) {
+    option (google.api.http) = {
+      post: "/retask/v1/sandbox-templates"
+      body: "*"
+    };
+  }
+  rpc DeleteSandboxTemplate(.common.v1.Id) returns (.common.v1.Empty) {
+    option (google.api.http) = {delete: "/retask/v1/sandbox-templates/{id}"};
+  }
+
+  // === Activity (read-only) ===
+  rpc GetSandboxActivities(SandboxActivitiesRequest) returns (SandboxActivitiesResponse) {
+    option (google.api.http) = {get: "/retask/v1/sandboxes/{sandbox_id}/activities"};
+  }
+
+  rpc GetSandboxUsage(SandboxUsageRequest) returns (SandboxUsage) {
+    option (google.api.http) = {get: "/retask/v1/sandboxes:usage"};
+  }
+
+}
+
+// ============================================================================
+// Sandbox
+// ============================================================================
+
+message Sandbox {
+  enum Type {
+    TYPE_CLOUD = 0;
+    TYPE_PRIVATE = 1;
+  }
+
+  enum Status {
+    STATUS_UNKNOWN = 0;
+    STATUS_PROVISIONING = 1;
+    STATUS_READY = 2;
+    STATUS_RUNNING = 3;
+    STATUS_STOPPED = 4;
+    STATUS_ERROR = 5;
+    STATUS_IDLE = 6;
+  }
+
+  message MachineType {
+    // @inject_tag: bson:"machine_type_id"
+    string machine_type_id = 1;
+    // @inject_tag: bson:"name"
+    string name = 2;
+  }
+
+  message Config {
+    enum ShutdownPolicy {
+      SHUTDOWN_POLICY_ON_IDLE_NO_USER_ACTIONS = 0;
+      SHUTDOWN_POLICY_ON_IDLE = 1;
+      SHUTDOWN_POLICY_NEVER = 2;
+    }
+
+    message EnvVar {
+      message SecretValue {
+        // Transient: populated by FE on write, stripped before DB storage (bson:"-"),
+        // re-injected by proxy at runtime via secret-manager.AccessSecrets.
+        // @inject_tag: bson:"-"
+        string value = 1;
+        // @inject_tag: bson:"secret_nrn"
+        .common.v1.Nrn secret_nrn = 2;
+        // @inject_tag: bson:"masked_value"
+        string masked_value = 3;
+      }
+      // @inject_tag: bson:"key"
+      string key = 1;
+      // @inject_tag: bson:"description"
+      string description = 2;
+      // Exactly one of `plain` or `secret` is set. `secret != nil` is the
+      // discriminator. Modelled as two optional fields (not a oneof) so the
+      // record round-trips through BSON without custom codecs.
+      // @inject_tag: bson:"plain,omitempty"
+      string plain = 3;
+      // @inject_tag: bson:"secret,omitempty"
+      SecretValue secret = 4;
+    }
+    message SystemPrompt {
+      // When true, the platform-injected default system prompt is
+      // not applied. Default (false) keeps the injected prompt.
+      // @inject_tag: bson:"skip_default"
+      bool skip_default = 1;
+      // User-authored system prompt appended after the default
+      // prompt (or used alone when skip_default is true).
+      // @inject_tag: bson:"extra"
+      string extra = 2;
+    }
+
+    // @inject_tag: bson:"env_vars"
+    repeated EnvVar env_vars = 1;
+    // @inject_tag: bson:"git_repos"
+    // All entries are cloned at session start.
+    repeated .integration.v1.GitRepo git_repos = 2;
+    // @inject_tag: bson:"startup_command"
+    string startup_command = 3;
+    // @inject_tag: bson:"session_init_command"
+    string session_init_command = 4;
+    // @inject_tag: bson:"system_prompt,omitempty"
+    SystemPrompt system_prompt = 5;
+    // When true, platform-managed credentials (ANTHROPIC_API_KEY,
+    // OPENAI_API_KEY, GITHUB_TOKEN/GH_TOKEN, NWEB_API_KEY) are pushed into
+    // the container process environment as-is — today's behavior. Default
+    // (false) withholds them from the container and injects them only on
+    // outbound HTTPS to canonical hosts (api.anthropic.com, api.openai.com,
+    // the GitHub host family, api.nweb.app, api.dev.nweb.app). Enable this
+    // only if you route those credentials through a non-canonical host
+    // (custom LLM gateway, GitHub Enterprise) — it disables egress
+    // interception for this sandbox.
+    // @inject_tag: bson:"passthrough_credentials"
+    bool passthrough_credentials = 6;
+    // Providers whose integrations are resolved and injected as env vars at
+    // session start. For each entry, sandbox service calls
+    // integration.AccessIntegration(workspace_id, provider_id,
+    // workspace_member_id) and injects the resolved env vars from
+    // Provider.sandbox_env_vars (with Integration.sandbox_env_var_overrides
+    // applied and {{accessToken}} substituted with the plaintext token).
+    // env_vars defined on this Config take precedence and overwrite any
+    // integration-injected env var with the same name.
+    // @inject_tag: bson:"integration_provider_ids"
+    repeated string integration_provider_ids = 7;
+    // @inject_tag: bson:"shutdown_policy"
+    ShutdownPolicy shutdown_policy = 8;
+  }
+
+  message PrivateConnection {
+    message Header {
+      // @inject_tag: bson:"key"
+      string key = 1;
+      // @inject_tag: bson:"value"
+      string value = 2;
+    }
+    // @inject_tag: bson:"url"
+    string url = 1;
+    // @inject_tag: bson:"headers"
+    repeated Header headers = 2;
+  }
+
+  message Stats {
+    // @inject_tag: bson:"total_session_count"
+    uint32 total_session_count = 1;
+
+    // @inject_tag: bson:"running_session_count"
+    uint32 running_session_count = 2;
+    // Sessions in TIMEOUT or IDLE status where insights.need_user_action = YES or UNKNOWN.
+    // @inject_tag: bson:"timed_out_session_pending_action_count"
+    uint32 timed_out_session_pending_action_count = 3;
+    // Sessions in TIMEOUT or IDLE status where insights.need_user_action = NO.
+    // @inject_tag: bson:"timed_out_session_no_action_count"
+    uint32 timed_out_session_no_action_count = 4;
+
+    // Last time Stats were written (by event handler or cron). Useful for
+    // detecting stale stats.
+    // @inject_tag: bson:"last_stats_checkpoint_at"
+    google.protobuf.Timestamp last_stats_checkpoint_at = 5;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string sandbox_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"owner_nrn"
+  .common.v1.Nrn owner_nrn = 3;
+  // @inject_tag: bson:"name"
+  string name = 4;
+
+  // @inject_tag: bson:"type"
+  Type type = 5;
+  // @inject_tag: bson:"status"
+  Status status = 6;
+  // @inject_tag: bson:"machine_type"
+  MachineType machine_type = 7;
+
+  // Runtime source of truth for sandbox configuration. Forked from the
+  // template on create when `source_template_id` is used; otherwise
+  // supplied directly by the caller.
+  // @inject_tag: bson:"config"
+  Config config = 8;
+  // Optional template link.
+  //
+  // On create: if set, callers MUST leave `config` empty. The server forks
+  // the template's config (including deep-copying secret entries) into
+  // `config` at create time. Both fields then coexist on the stored record.
+  //
+  // At runtime: the sandbox only reads `config`. Template lookups are not
+  // performed on the read path — everything the sandbox needs (including
+  // forked secrets) already lives in `config`. Sandboxes created without a
+  // template work identically: `config` is the single source of truth.
+  //
+  // Lifecycle: cleared the first time the user modifies any field in
+  // `config`. Once cleared, SandboxTemplateConfigChanged events will no
+  // longer touch this sandbox. While set, a config change on the referenced
+  // template cascades to this sandbox via SandboxTemplateConfigChanged.
+  // @inject_tag: bson:"source_template_id"
+  string source_template_id = 9;
+  // @inject_tag: bson:"private_connection,omitempty"
+  PrivateConnection private_connection = 10;
+
+  // @inject_tag: bson:"report"
+  Stats stats = 11;
+  // @inject_tag: bson:"sharing"
+  .workspace.v1.Sharing sharing = 12;
+
+  // @inject_tag: bson:"created_by_nrn"
+  .common.v1.Nrn created_by_nrn = 13;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 14;
+  // @inject_tag: bson:"updated_by_nrn"
+  .common.v1.Nrn updated_by_nrn = 15;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 16;
+
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 17;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  .common.v1.DeletionInfo deletion_info = 18;
+}
+
+// ============================================================================
+// Session
+// ============================================================================
+
+message Session {
+  enum Status {
+    STATUS_ACTIVE = 0;
+    STATUS_IDLE = 1;
+    STATUS_TIMEOUT = 2;
+    STATUS_STOPPED = 3;
+  }
+
+  enum Mode {
+    MODE_SCRATCH = 0;
+    MODE_MANUAL_TASK_PLANNING = 1;
+    MODE_MANUAL_TASK_PROCESSING = 2;
+    MODE_AUTO_TASK_PLANNING = 3;
+    MODE_AUTO_TASK_PROCESSING = 4;
+  }
+
+  message Insights {
+    enum NeedUserAction {
+      NEED_USER_ACTION_UNKNOWN = 0;
+      NEED_USER_ACTION_YES = 1;
+      NEED_USER_ACTION_NO = 2;
+    }
+    message ActionItem {
+      // @inject_tag: bson:"question"
+      string question = 1;
+      // @inject_tag: bson:"suggestions"
+      repeated string suggestions = 2;
+    }
+    // @inject_tag: bson:"need_user_action"
+    NeedUserAction need_user_action = 1;
+    // @inject_tag: bson:"action_items"
+    repeated ActionItem action_items = 2;
+  }
+
+  // Identity
+  // @inject_tag: bson:"_id,omitempty"
+  string session_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"sandbox_id"
+  string sandbox_id = 3;
+  // Optional. When set, the session is agent-driven. In MANUAL modes the
+  // agent acts under the creating user's token; in AUTO modes it uses its
+  // own token scoped to its workspace role.
+  // @inject_tag: bson:"agent_id"
+  string agent_id = 4;
+  // @inject_tag: bson:"owner_nrn"
+  .common.v1.Nrn owner_nrn = 5;
+
+  // Core metadata
+  // @inject_tag: bson:"name"
+  string name = 6;
+  // @inject_tag: bson:"status"
+  Status status = 7;
+  // @inject_tag: bson:"mode"
+  Mode mode = 8;
+  // Optional anchor for the session — the entity the user opened the
+  // session from (a task, a project, etc.). Required to reference a
+  // task when mode = MODE_TASK_PROCESSING.
+  // @inject_tag: bson:"seed_nrn,omitempty"
+  .common.v1.Nrn seed_nrn = 9;
+  // Optional freeform text captured at session creation. Interpretation
+  // depends on mode: the user's first chat message for MODE_SCRATCH;
+  // extra guidance layered on the planner / processor for the task
+  // modes. Write-once on NewSession.
+  // @inject_tag: bson:"seed_prompt,omitempty"
+  string seed_prompt = 10;
+  // @inject_tag: bson:"sharing"
+  .workspace.v1.Sharing sharing = 11;
+
+  // Runtime state — updated by proxy via ReportSessionStatus
+  // @inject_tag: bson:"last_user_message,omitempty"
+  string last_user_message = 12;
+  // @inject_tag: bson:"last_user_message_at"
+  google.protobuf.Timestamp last_user_message_at = 13;
+  // @inject_tag: bson:"last_system_message,omitempty"
+  string last_system_message = 14;
+  // @inject_tag: bson:"last_system_message_at"
+  google.protobuf.Timestamp last_system_message_at = 15;
+  // @inject_tag: bson:"last_active_at"
+  google.protobuf.Timestamp last_active_at = 16;
+
+  // LLM-extracted insights — populated async after IDLE transition
+  // @inject_tag: bson:"insights,omitempty"
+  Insights insights = 17;
+
+  // Lifecycle
+  // @inject_tag: bson:"started_at"
+  google.protobuf.Timestamp started_at = 18;
+  // @inject_tag: bson:"ended_at"
+  google.protobuf.Timestamp ended_at = 19;
+
+  // Audit
+  // @inject_tag: bson:"created_by_nrn"
+  .common.v1.Nrn created_by_nrn = 20;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 21;
+  // @inject_tag: bson:"updated_by_nrn"
+  .common.v1.Nrn updated_by_nrn = 22;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 23;
+
+  // Soft delete
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 24;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  .common.v1.DeletionInfo deletion_info = 25;
+}
+
+// ============================================================================
+// SandboxTemplate
+// ============================================================================
+
+message SandboxTemplate {
+  // @inject_tag: bson:"_id,omitempty"
+  string sandbox_template_id = 1;
+  // @inject_tag: bson:"workspace_id"
+  string workspace_id = 2;
+  // @inject_tag: bson:"owner_nrn"
+  .common.v1.Nrn owner_nrn = 3;
+  // @inject_tag: bson:"name"
+  string name = 4;
+  // @inject_tag: bson:"description"
+  string description = 5;
+  // @inject_tag: bson:"config"
+  Sandbox.Config config = 6;
+  // @inject_tag: bson:"sharing"
+  .workspace.v1.Sharing sharing = 7;
+  // NRN of the resource this template is scoped to (e.g. an agent NRN).
+  // Unset means the template is standalone/shared.
+  // @inject_tag: bson:"scope_nrn,omitempty"
+  .common.v1.Nrn scope_nrn = 8;
+  // @inject_tag: bson:"created_by_nrn"
+  .common.v1.Nrn created_by_nrn = 9;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 10;
+  // @inject_tag: bson:"updated_by_nrn"
+  .common.v1.Nrn updated_by_nrn = 11;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 12;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 13;
+  // @inject_tag: bson:"deletion_info,omitempty"
+  .common.v1.DeletionInfo deletion_info = 14;
+}
+
+// ============================================================================
+// SandboxActivity
+// ============================================================================
+
+message SandboxActivity {
+  enum Type {
+    TYPE_UNKNOWN = 0;
+    TYPE_CREATED = 1;
+    TYPE_FORKED_TEMPLATE = 2;
+    TYPE_CONFIG_UPDATED = 3;
+    TYPE_TEMPLATE_SYNCED = 4;
+    TYPE_STATUS_CHANGED = 5;
+    TYPE_SESSION_STARTED = 6;
+    TYPE_SESSION_RUNTIME_RESOLVED = 7;
+    TYPE_SESSION_STOPPED = 8;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string sandbox_activity_id = 1;
+  // @inject_tag: bson:"sandbox_id"
+  string sandbox_id = 2;
+  // @inject_tag: bson:"type"
+  Type type = 3;
+  // @inject_tag: bson:"description"
+  string description = 4;
+  // @inject_tag: bson:"metadata"
+  map<string, string> metadata = 5;
+  // @inject_tag: bson:"actor_nrn"
+  .common.v1.Nrn actor_nrn = 6;
+  // @inject_tag: bson:"occurred_at"
+  google.protobuf.Timestamp occurred_at = 7;
+}
+
+// ============================================================================
+// Request / Response — Sandbox
+// ============================================================================
+
+message SandboxesRequest {
+  message Filter {
+    string workspace_id = 1;
+    repeated string sandbox_ids = 2;
+    repeated Sandbox.Type types = 3;
+    repeated Sandbox.Status statuses = 4;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    CREATED_AT_ASC = 1;
+    CREATED_AT_DESC = 2;
+  }
+  Filter filter = 1;
+  Sort sort = 2;
+  .common.v1.Pagination pagination = 3;
+}
+
+message SandboxesResponse {
+  repeated Sandbox sandboxes = 1;
+}
+
+// ============================================================================
+// Request / Response — Session
+// ============================================================================
+
+message SessionsRequest {
+  message Filter {
+    string workspace_id = 1;
+    repeated string session_ids = 2;
+    repeated string sandbox_ids = 3;
+    repeated Session.Status statuses = 4;
+    repeated Session.Mode modes = 5;
+    repeated string seed_nrns = 6;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    CREATED_AT_ASC = 1;
+    CREATED_AT_DESC = 2;
+    STARTED_AT_ASC = 3;
+    STARTED_AT_DESC = 4;
+    LAST_ACTIVE_AT_ASC = 5;
+    LAST_ACTIVE_AT_DESC = 6;
+  }
+  Filter filter = 1;
+  Sort sort = 2;
+  .common.v1.Pagination pagination = 3;
+}
+
+message SessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message NewSessionRequest {
+  string agent_id = 1;
+  string sandbox_id = 2;
+  Session.Mode mode = 3;
+  string name = 4;
+  .common.v1.Nrn seed_nrn = 5;
+  string seed_prompt = 6;
+}
+
+message SessionConnectionResponse {
+  string url = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// Materialized runtime view of a session, returned by GetSessionRuntime.
+// Not a stored entity — assembled on each call from the current Session,
+// Sandbox, and resolved secret values from secret-manager.
+message SessionRuntime {
+  // Session loaded verbatim. NotFound if soft-deleted.
+  Session session = 1;
+  // Parent sandbox loaded verbatim, with one read-path mutation: every
+  // Config.EnvVar.SecretValue has `value` populated with the plaintext
+  // resolved from secret-manager. `secret_nrn` and `masked_value` are
+  // preserved. If a secret cannot be resolved (missing, workspace
+  // mismatch, secret-manager error), `value` stays empty — the other
+  // fields remain so the proxy can log and surface the failure.
+  // NotFound if soft-deleted.
+  Sandbox sandbox = 2;
+}
+
+// ============================================================================
+// Request / Response — SandboxTemplate
+// ============================================================================
+
+message SandboxTemplatesRequest {
+  message Filter {
+    string workspace_id = 1;
+    repeated string sandbox_template_ids = 2;
+    repeated .workspace.v1.Sharing.Scope scopes = 3;
+    // When false (default), scoped templates (scope_nrn set) are excluded.
+    bool include_scoped = 4;
+  }
+  enum Sort {
+    DEFAULT = 0;
+    CREATED_AT_ASC = 1;
+    CREATED_AT_DESC = 2;
+    NAME_ASC = 3;
+    NAME_DESC = 4;
+  }
+  Filter filter = 1;
+  Sort sort = 2;
+  .common.v1.Pagination pagination = 3;
+}
+
+message SandboxTemplatesResponse {
+  repeated SandboxTemplate sandbox_templates = 1;
+}
+
+// ============================================================================
+// Request / Response — SandboxActivity
+// ============================================================================
+
+message SandboxActivitiesRequest {
+  string sandbox_id = 1;
+  repeated SandboxActivity.Type types = 2;
+  .common.v1.Pagination pagination = 3;
+}
+
+message SandboxActivitiesResponse {
+  repeated SandboxActivity activities = 1;
+}
+
+// ============================================================================
+// ReportSessionStatus
+// ============================================================================
+
+message ReportSessionStatusRequest {
+  string workspace_id = 1;
+  string sandbox_id = 2;
+  string session_id = 3;
+  Session.Status status = 4;
+  string last_user_message = 5;
+  google.protobuf.Timestamp last_user_message_at = 6;
+  string last_system_message = 7;
+  google.protobuf.Timestamp last_system_message_at = 8;
+  google.protobuf.Timestamp observed_at = 9;
+}
+
+message SandboxUsageRequest {
+  string workspace_id = 1;
+  bool   with_quota   = 2;
+}
+
+message SandboxUsage {
+  message Quota {
+    string                     quota_id = 1;
+    repeated .quota.v1.Quota.Unit units  = 2;
+  }
+
+  // Non-deleted sandboxes (counts toward max_sandboxes_per_workspace)
+  uint32 total_sandboxes  = 1;
+  // Session.STATUS_ACTIVE count across all sandboxes in the workspace
+  // (counts toward max_running_sessions_per_workspace)
+  uint32 running_sessions = 2;
+  // Runtime quota; populated only when SandboxUsageRequest.with_quota = true
+  Quota  quota            = 3;
+}

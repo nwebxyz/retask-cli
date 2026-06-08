@@ -1,0 +1,9 @@
+// Copyright 2026 NWEB.xyz
+syntax = "proto3";
+package common.v1;
+
+message Price {
+  double amount = 1; // Must be < 4B
+  // Currency code: 3-characters code (https://en.wikipedia.org/wiki/ISO_4217)
+  string currency = 2;
+}

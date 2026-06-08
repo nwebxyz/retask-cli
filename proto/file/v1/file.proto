@@ -1,0 +1,118 @@
+syntax = "proto3";
+package file.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/nrn.proto";
+
+message File {
+  enum OcrStatus {
+    OCR_STATUS_PENDING = 0;
+    OCR_STATUS_PROCESSING = 1;
+    OCR_STATUS_COMPLETED = 2;
+    OCR_STATUS_FAILED = 3;
+    OCR_STATUS_CANCELLED = 4;
+  }
+  message Metadata {
+    message WebsiteInfo {
+      // @inject_tag: bson:"title"
+      string title = 1;
+      // @inject_tag: bson:"url"
+      string url = 2;
+      // @inject_tag: bson:"favicon_url"
+      string favicon_url = 3;
+    }
+
+    // @inject_tag: bson:"thread_id"
+    string thread_id = 1;
+    // @inject_tag: bson:"website_info"
+    WebsiteInfo website_info = 2;
+  }
+
+  // @inject_tag: bson:"_id,omitempty"
+  string file_id = 1;
+  // @inject_tag: bson:"project_id"
+  string project_id = 2;
+  // @inject_tag: bson:"mime_type"
+  string mime_type = 3;
+  // @inject_tag: bson:"file_name"
+  string file_name = 4;
+  // @inject_tag: bson:"bytes"
+  uint64 bytes = 5;
+  // @inject_tag: bson:"storage_path"
+  string storage_path = 6; // <bucketName>/<objectPath>
+  // @inject_tag: bson:"data"
+  bytes data = 7; // This content will be fetched from storage_path for raw data, return only if the client requests it.
+
+  // @inject_tag: bson:"require_ocr"
+  bool require_ocr = 8;
+  // @inject_tag: bson:"ocr_status"
+  OcrStatus ocr_status = 9;
+  // @inject_tag: bson:"ocr_status_updated_at"
+  google.protobuf.Timestamp ocr_status_updated_at = 10;
+  // @inject_tag: bson:"ocr_storage_path"
+  string ocr_storage_path = 11; // <bucketName>/<objectPath>
+  // @inject_tag: bson:"ocr_bytes"
+  uint64 ocr_bytes = 12;
+  // @inject_tag: bson:"ocr_content"
+  string ocr_content = 13; // This content will be fetched from ocr_storage_path, return only if the client requests it.
+
+  // @inject_tag: bson:"preview_url"
+  string preview_url = 14;
+  // @inject_tag: bson:"download_url"
+  string download_url = 15;
+
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 16;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 17;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 18;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 19;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 20;
+
+  // @inject_tag: bson:"metadata"
+  Metadata metadata = 21;
+}
+
+message FileInfo {
+  // @inject_tag: bson:"_id,omitempty"
+  string file_id = 1;
+  // @inject_tag: bson:"project_id"
+  string project_id = 2;
+  // @inject_tag: bson:"mime_type"
+  string mime_type = 3;
+  // @inject_tag: bson:"file_name"
+  string file_name = 4;
+  // @inject_tag: bson:"bytes"
+  uint64 bytes = 5;
+
+  // @inject_tag: bson:"require_ocr"
+  bool require_ocr = 8;
+  // @inject_tag: bson:"ocr_status"
+  File.OcrStatus ocr_status = 9;
+  // @inject_tag: bson:"ocr_status_updated_at"
+  google.protobuf.Timestamp ocr_status_updated_at = 10;
+  // @inject_tag: bson:"ocr_bytes"
+  uint64 ocr_bytes = 12;
+
+  // @inject_tag: bson:"preview_url"
+  string preview_url = 14;
+  // @inject_tag: bson:"download_url"
+  string download_url = 15;
+
+  // @inject_tag: bson:"created_by_nrn"
+  common.v1.Nrn created_by_nrn = 16;
+  // @inject_tag: bson:"created_at"
+  google.protobuf.Timestamp created_at = 17;
+  // @inject_tag: bson:"updated_by_nrn"
+  common.v1.Nrn updated_by_nrn = 18;
+  // @inject_tag: bson:"updated_at"
+  google.protobuf.Timestamp updated_at = 19;
+  // @inject_tag: bson:"is_deleted"
+  bool is_deleted = 20;
+
+  // @inject_tag: bson:"metadata"
+  File.Metadata metadata = 21;
+}
