@@ -11,6 +11,7 @@ import (
 	filecmd "nweb.xyz/retask-cli/internal/cmd/file"
 	integrationcmd "nweb.xyz/retask-cli/internal/cmd/integration"
 	projectcmd "nweb.xyz/retask-cli/internal/cmd/project"
+	taskcmd "nweb.xyz/retask-cli/internal/cmd/task"
 	workspacecmd "nweb.xyz/retask-cli/internal/cmd/workspace"
 	"nweb.xyz/retask-cli/internal/flags"
 	"nweb.xyz/retask-cli/internal/version"
@@ -61,6 +62,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(filecmd.NewCommand(gf))
 	root.AddCommand(integrationcmd.NewCommand(gf))
 	root.AddCommand(projectcmd.NewCommand(gf))
+	root.AddCommand(taskcmd.NewCommand(gf))
 	root.AddCommand(workspacecmd.NewCommand(gf))
 
 	return root
