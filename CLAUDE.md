@@ -1,67 +1,147 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## Overview
 
-`retask-cli` is a Go module (`nweb.xyz/retask-cli`) that houses the **API contract definitions** (Protobuf) and their **generated Go code** for the NWEB platform, with a focus on the Retask.work services.
+`retask-cli` is a public Go CLI (`nweb.xyz/retask-cli`) for interacting with NWEB Retask APIs over gRPC. It authenticates via PAT → JWT exchange, supports multi-profile config, and is designed for both human operators and AI agents.
 
 ## Repository Structure
 
 ```
-api-contracts/          # Git subtree — source of truth for all .proto files
-  proto/                # Protobuf definitions organized by service
-  docs/architecture/    # Architecture design docs
-api-contracts-gen/      # Generated Go code (never edit by hand)
-buf.yaml                # Buf module config (proto source: api-contracts/proto)
-buf.gen.yaml            # Code generation config (Go + gRPC + grpc-gateway)
-.bin/build_proto.sh     # Build script
+cmd/retask/main.go              # Entry point — wires all service commands
+internal/
+  auth/token.go                 # JWT resolver: env → cached → PAT exchange
+  client/grpc.go                # gRPC connection factory (TLS, JWT interceptor)
+  config/profile.go             # Load/save ~/.config/retask/config.yaml
+  flags/flags.go                # Global flags struct
+  output/output.go              # JSON and --pretty table renderer
+  version/version.go            # Version var (set via ldflags)
+  cmd/
+    auth/                       # retask auth ...
+    workspace/                  # retask workspace ...
+    customer/                   # retask customer ...
+    project/                    # retask project ...
+    file/                       # retask file ...
+    integration/                # retask integration ...
+    task/                       # retask task ...
+    projectconfig/              # retask project-config ...
+    sandbox/                    # retask sandbox ...
+    agent/                      # retask agent ...
+    helpcmd/                    # retask help-llm
+proto/                          # Protobuf sources (approved services only)
+proto-gen/                      # Generated Go code — never edit by hand
+.bin/
+  build_proto.sh                # Regenerate proto-gen/ from proto/
+  sync_proto.sh                 # Copy approved protos from local api-contracts/
+buf.yaml                        # Buf config (source: proto/)
+buf.gen.yaml                    # Code gen config (output: proto-gen/)
+skills/retask-cli.md            # Claude Code skill file
 ```
-
-`api-contracts/` is embedded as a git subtree from `git@github.com:nwebxyz/api-contracts.git`.
 
 ## Commands
 
-### Generate protobuf code
+### Build
+
+```bash
+go build -ldflags "-X nweb.xyz/retask-cli/internal/version.Version=0.1.0" -o retask ./cmd/retask/
+```
+
+### Run tests
+
+```bash
+go test ./...
+```
+
+### Regenerate proto code
 
 ```bash
 ./.bin/build_proto.sh
 ```
 
-This runs `buf generate .` then `protoc-go-inject-tag` on all generated `.pb.go` files. Requires `buf` and `protoc-go-inject-tag` to be installed.
+Requires [`buf`](https://buf.build/docs/installation) and [`protoc-go-inject-tag`](https://github.com/favadi/protoc-go-inject-tag).
 
-### Sync api-contracts subtree
+## Security invariants — never break these
 
-```bash
-# Pull latest from api-contracts repo
-git subtree pull --prefix api-contracts git@github.com:nwebxyz/api-contracts.git main --squash
+- **PAT (`NWEB_API_KEY`) is never stored.** It is read from env only when calling `auth.ExchangePat`. It is never written to the profile file or any other storage.
+- **If `NWEB_API_TOKEN` is set, skip all PAT logic.** The token is used directly with no validation or exchange.
+- **`--no-save` / `RETASK_NO_PERSIST` suppresses all file writes.** Commands must print `export NWEB_API_TOKEN=...` / `export NWEB_WORKSPACE_ID=...` lines instead.
 
-# Push changes back to api-contracts repo
-git subtree push --prefix api-contracts git@github.com:nwebxyz/api-contracts.git main
+## Code conventions
+
+### Adding a new service command
+
+1. Create `internal/cmd/<service>/command.go` with package `<service>`
+2. Export `func NewCommand(gf *flags.Global) *cobra.Command`
+3. Add one line to `cmd/retask/main.go`: `root.AddCommand(<service>cmd.NewCommand(gf))`
+4. Add entries to `internal/cmd/helpcmd/command.go` manifest
+
+### connect() pattern
+
+Every service package uses the same pattern:
+
+```go
+func connect(gf *flags.Global) (servicev1.ServiceClient, func(), error) {
+    path := gf.ConfigPath
+    if path == "" { path = config.DefaultConfigPath() }
+    cfg, err := config.Load(path)
+    if err != nil { return nil, nil, err }
+    profile := cfg.ActiveProfileData(gf.Profile)
+    resolver := auth.NewResolver(profile, gf.Profile, gf.WorkspaceID, path, gf.NoSave, gf.Insecure)
+    jwt, err := resolver.Token(context.Background())
+    if err != nil { return nil, nil, err }
+    conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
+    if err != nil { return nil, nil, err }
+    return servicev1.NewServiceClient(conn), func() { conn.Close() }, nil
+}
 ```
 
-## Proto Conventions (enforced by api-contracts/CLAUDE.md)
+### Partial updates
 
-**Never edit files in `api-contracts-gen/`** — they are always regenerated from proto sources.
+`task update` and `sandbox session update` use `commonv1.PartialData`. Use `cmd.Flags().Changed("flag-name")` to detect which flags were explicitly set:
 
-### HTTP URL conventions
-- Nested resources: `GET /v1/workspaces/{workspace_id}/members`
-- Custom methods use `:` separator per AIP-136: `POST /retask/v1/projects/{id}:archive`
-- Path param is `{id}` for `common.v1.Id`, or the actual field name otherwise
+```go
+data := make(map[string]string)
+if cmd.Flags().Changed("title") { data["title"] = title }
+if cmd.Flags().Changed("status") { data["status"] = status }
+svc.SetPartialTask(ctx, &commonv1.PartialData{Id: args[0], Data: data})
+```
 
-### RPC naming
-- List: `rpc GetCustomers(CustomersRequest) returns (CustomersResponse)` — plural for both
-- Single by ID: `rpc GetCustomer(common.v1.Id) returns (Customer)` — entity directly
-- Never prefix message types with `Get` (verb belongs on the RPC, not the message)
+### Help text template
 
-### Message conventions
-- Audit fields (`created_by_nrn`, `updated_by_nrn`, `created_at`, `updated_at`) required on all stored messages
-- Soft delete required by default: `is_deleted` + `deletion_info` fields; soft-deleted items invisible to API
-- Filter fields use `repeated` for multi-select (exception: `workspace_id` stays singular)
-- Nested types: define inside the message that directly uses them; don't repeat parent name in nested type name
-- Enum values must be prefixed with enum name in UPPER_SNAKE_CASE (e.g., `THEME_PREFERENCE_LIGHT`)
+Every command's `Long` description follows:
 
-### Proto service domains
-- `retask/` — Retask.work: `common/v1`, `project/v1`, `task/v1`, `sandbox/v1`, `agent/v1`
-- `ai/` — NWEB.AI: chat, credit, payment, project, report, ocr, agent
-- Root-level services: auth, workspace, subscription, quota, cron, file, message, secret, customer
+```
+One-line summary.
+
+Usage example:
+  retask <command> <args> --flag value
+
+Flags:
+  --flag string  Description. Values: VALUE_A, VALUE_B
+```
+
+## Proto conventions
+
+- Sources: `proto/` — organized by `<service>/v1/<service>.proto`
+- Generated: `proto-gen/` — Go package prefix `nweb.xyz/retask-cli/proto-gen`
+- Never edit files in `proto-gen/` by hand
+- To add a new approved service: add to the `APPROVED` array in `.bin/sync_proto.sh` and `APPROVED_SERVICES` in `.bin/build_proto.sh`, then re-run both scripts
+
+### Approved proto services
+
+| Service | Import path |
+|---|---|
+| auth | `proto-gen/auth/v1` |
+| common | `proto-gen/common/v1` |
+| customer | `proto-gen/customer/v1` |
+| file | `proto-gen/file/v1` |
+| integration | `proto-gen/integration/v1` |
+| project | `proto-gen/project/v1` |
+| quota | `proto-gen/quota/v1` (transitive dep of sandbox) |
+| retask/agent | `proto-gen/retask/agent/v1` |
+| retask/common | `proto-gen/retask/common/v1` |
+| retask/project | `proto-gen/retask/project/v1` |
+| retask/sandbox | `proto-gen/retask/sandbox/v1` |
+| retask/task | `proto-gen/retask/task/v1` |
+| workspace | `proto-gen/workspace/v1` |
