@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	authcmd "nweb.xyz/retask-cli/internal/cmd/auth"
 	"nweb.xyz/retask-cli/internal/flags"
 	"nweb.xyz/retask-cli/internal/version"
 )
@@ -50,7 +51,7 @@ func newRootCommand() *cobra.Command {
 	root.SetVersionTemplate(fmt.Sprintf("retask version %s\n", version.Version))
 
 	// Service commands registered here — add one line per new service
-	// (populated in subsequent tasks)
+	root.AddCommand(authcmd.NewCommand(gf))
 
 	return root
 }
