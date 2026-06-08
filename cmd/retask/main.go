@@ -12,6 +12,7 @@ import (
 	integrationcmd "nweb.xyz/retask-cli/internal/cmd/integration"
 	projectcmd "nweb.xyz/retask-cli/internal/cmd/project"
 	projectconfigcmd "nweb.xyz/retask-cli/internal/cmd/projectconfig"
+	sandboxcmd "nweb.xyz/retask-cli/internal/cmd/sandbox"
 	taskcmd "nweb.xyz/retask-cli/internal/cmd/task"
 	workspacecmd "nweb.xyz/retask-cli/internal/cmd/workspace"
 	"nweb.xyz/retask-cli/internal/flags"
@@ -64,6 +65,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(integrationcmd.NewCommand(gf))
 	root.AddCommand(projectcmd.NewCommand(gf))
 	root.AddCommand(projectconfigcmd.NewCommand(gf))
+	root.AddCommand(sandboxcmd.NewCommand(gf))
 	root.AddCommand(taskcmd.NewCommand(gf))
 	root.AddCommand(workspacecmd.NewCommand(gf))
 
