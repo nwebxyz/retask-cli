@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	authcmd "nweb.xyz/retask-cli/internal/cmd/auth"
+	workspacecmd "nweb.xyz/retask-cli/internal/cmd/workspace"
 	"nweb.xyz/retask-cli/internal/flags"
 	"nweb.xyz/retask-cli/internal/version"
 )
@@ -52,6 +53,7 @@ func newRootCommand() *cobra.Command {
 
 	// Service commands registered here — add one line per new service
 	root.AddCommand(authcmd.NewCommand(gf))
+	root.AddCommand(workspacecmd.NewCommand(gf))
 
 	return root
 }
