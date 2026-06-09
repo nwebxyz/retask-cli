@@ -1,4 +1,4 @@
-module nweb.xyz/retask-cli
+module github.com/nwebxyz/retask-cli
 
 go 1.25.0
 

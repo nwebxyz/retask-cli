@@ -4,7 +4,7 @@ package flags
 import (
 	"os"
 
-	"nweb.xyz/retask-cli/internal/config"
+	"github.com/nwebxyz/retask-cli/internal/config"
 )
 
 // Global holds persistent flags available on every command.

@@ -7,7 +7,7 @@ managed:
       module: buf.build/googleapis/googleapis
   override:
     - file_option: go_package_prefix
-      value: nweb.xyz/retask-cli/proto-gen
+      value: github.com/nwebxyz/retask-cli/proto-gen
 plugins:
   - remote: buf.build/protocolbuffers/go:v1.30.0
     out: proto-gen

@@ -27,7 +27,7 @@ irm https://retask.work/install.ps1 | iex
 ### Go install
 
 ```bash
-go install nweb.xyz/retask-cli/cmd/retask@latest
+go install github.com/nwebxyz/retask-cli/cmd/retask@latest
 ```
 
 ### Build from source
@@ -35,7 +35,7 @@ go install nweb.xyz/retask-cli/cmd/retask@latest
 ```bash
 git clone https://github.com/nwebxyz/retask-cli
 cd retask-cli
-go build -ldflags "-X nweb.xyz/retask-cli/internal/version.Version=$(git describe --tags)" -o retask ./cmd/retask/
+go build -ldflags "-X github.com/nwebxyz/retask-cli/internal/version.Version=$(git describe --tags)" -o retask ./cmd/retask/
 ```
 
 ## Quick start
@@ -186,7 +186,7 @@ go test ./...
 ### Build
 
 ```bash
-go build -ldflags "-X nweb.xyz/retask-cli/internal/version.Version=0.1.0" -o retask ./cmd/retask/
+go build -ldflags "-X github.com/nwebxyz/retask-cli/internal/version.Version=0.1.0" -o retask ./cmd/retask/
 ```
 
 ## License

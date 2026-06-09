@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"nweb.xyz/retask-cli/internal/config"
-	authv1 "nweb.xyz/retask-cli/proto-gen/auth/v1"
-	commonv1 "nweb.xyz/retask-cli/proto-gen/common/v1"
+	"github.com/nwebxyz/retask-cli/internal/config"
+	authv1 "github.com/nwebxyz/retask-cli/proto-gen/auth/v1"
+	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
 // Resolver resolves a valid JWT for API calls.

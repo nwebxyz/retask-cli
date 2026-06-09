@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Overview
 
-`retask-cli` is a public Go CLI (`nweb.xyz/retask-cli`) for interacting with NWEB Retask APIs over gRPC. It authenticates via PAT → JWT exchange, supports multi-profile config, and is designed for both human operators and AI agents.
+`retask-cli` is a public Go CLI (`github.com/nwebxyz/retask-cli`) for interacting with NWEB Retask APIs over gRPC. It authenticates via PAT → JWT exchange, supports multi-profile config, and is designed for both human operators and AI agents.
 
 ## Repository Structure
 
@@ -44,7 +44,7 @@ skills/retask-cli.md            # Claude Code skill file
 ### Build
 
 ```bash
-go build -ldflags "-X nweb.xyz/retask-cli/internal/version.Version=0.1.0" -o retask ./cmd/retask/
+go build -ldflags "-X github.com/nwebxyz/retask-cli/internal/version.Version=0.1.0" -o retask ./cmd/retask/
 ```
 
 ### Run tests
@@ -124,7 +124,7 @@ Flags:
 ## Proto conventions
 
 - Sources: `proto/` — organized by `<service>/v1/<service>.proto`
-- Generated: `proto-gen/` — Go package prefix `nweb.xyz/retask-cli/proto-gen`
+- Generated: `proto-gen/` — Go package prefix `github.com/nwebxyz/retask-cli/proto-gen`
 - Never edit files in `proto-gen/` by hand
 - To add a new approved service: add to the `APPROVED` array in `.bin/sync_proto.sh` and `APPROVED_SERVICES` in `.bin/build_proto.sh`, then re-run both scripts
 

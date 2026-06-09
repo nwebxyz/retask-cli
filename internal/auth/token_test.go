@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"nweb.xyz/retask-cli/internal/auth"
-	"nweb.xyz/retask-cli/internal/config"
+	"github.com/nwebxyz/retask-cli/internal/auth"
+	"github.com/nwebxyz/retask-cli/internal/config"
 )
 
 func TestDirectToken(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"nweb.xyz/retask-cli/internal/flags"
-	"nweb.xyz/retask-cli/internal/version"
+	"github.com/nwebxyz/retask-cli/internal/flags"
+	"github.com/nwebxyz/retask-cli/internal/version"
 )
 
 func NewCommand(gf *flags.Global) *cobra.Command {

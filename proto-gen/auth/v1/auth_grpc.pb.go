@@ -14,7 +14,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
-	v1 "nweb.xyz/retask-cli/proto-gen/common/v1"
+	v1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
 // This is a compile-time assertion to ensure that this generated file

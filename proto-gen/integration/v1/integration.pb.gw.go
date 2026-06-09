@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"nweb.xyz/retask-cli/proto-gen/common/v1"
+	"github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
 // Suppress "imported and not used" errors

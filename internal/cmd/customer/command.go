@@ -7,13 +7,13 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"nweb.xyz/retask-cli/internal/auth"
-	"nweb.xyz/retask-cli/internal/client"
-	"nweb.xyz/retask-cli/internal/config"
-	"nweb.xyz/retask-cli/internal/flags"
-	"nweb.xyz/retask-cli/internal/output"
-	commonv1 "nweb.xyz/retask-cli/proto-gen/common/v1"
-	customerv1 "nweb.xyz/retask-cli/proto-gen/customer/v1"
+	"github.com/nwebxyz/retask-cli/internal/auth"
+	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/config"
+	"github.com/nwebxyz/retask-cli/internal/flags"
+	"github.com/nwebxyz/retask-cli/internal/output"
+	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
+	customerv1 "github.com/nwebxyz/retask-cli/proto-gen/customer/v1"
 )
 
 // NewCommand returns the top-level "customer" cobra command.

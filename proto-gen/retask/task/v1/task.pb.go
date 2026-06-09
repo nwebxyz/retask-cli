@@ -13,9 +13,9 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	v11 "nweb.xyz/retask-cli/proto-gen/common/v1"
-	v12 "nweb.xyz/retask-cli/proto-gen/file/v1"
-	v1 "nweb.xyz/retask-cli/proto-gen/retask/common/v1"
+	v11 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
+	v12 "github.com/nwebxyz/retask-cli/proto-gen/file/v1"
+	v1 "github.com/nwebxyz/retask-cli/proto-gen/retask/common/v1"
 	reflect "reflect"
 	sync "sync"
 )

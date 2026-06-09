@@ -3,8 +3,8 @@ package flags_test
 import (
 	"testing"
 
-	"nweb.xyz/retask-cli/internal/config"
-	"nweb.xyz/retask-cli/internal/flags"
+	"github.com/nwebxyz/retask-cli/internal/config"
+	"github.com/nwebxyz/retask-cli/internal/flags"
 )
 
 func TestResolveWorkspaceID_FlagWins(t *testing.T) {

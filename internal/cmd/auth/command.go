@@ -9,13 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"nweb.xyz/retask-cli/internal/auth"
-	"nweb.xyz/retask-cli/internal/client"
-	"nweb.xyz/retask-cli/internal/config"
-	"nweb.xyz/retask-cli/internal/flags"
-	"nweb.xyz/retask-cli/internal/output"
-	authv1 "nweb.xyz/retask-cli/proto-gen/auth/v1"
-	commonv1 "nweb.xyz/retask-cli/proto-gen/common/v1"
+	"github.com/nwebxyz/retask-cli/internal/auth"
+	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/config"
+	"github.com/nwebxyz/retask-cli/internal/flags"
+	"github.com/nwebxyz/retask-cli/internal/output"
+	authv1 "github.com/nwebxyz/retask-cli/proto-gen/auth/v1"
+	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
 func NewCommand(gf *flags.Global) *cobra.Command {

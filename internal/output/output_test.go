@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"nweb.xyz/retask-cli/internal/output"
+	"github.com/nwebxyz/retask-cli/internal/output"
 )
 
 func TestPrintJSON(t *testing.T) {
