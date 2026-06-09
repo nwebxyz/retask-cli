@@ -17,6 +17,7 @@ import (
 	sandboxcmd "nweb.xyz/retask-cli/internal/cmd/sandbox"
 	taskcmd "nweb.xyz/retask-cli/internal/cmd/task"
 	workspacecmd "nweb.xyz/retask-cli/internal/cmd/workspace"
+	"nweb.xyz/retask-cli/internal/config"
 	"nweb.xyz/retask-cli/internal/flags"
 	"nweb.xyz/retask-cli/internal/version"
 )
@@ -45,16 +46,25 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&gf.ConfigPath, "config", "", "Config file path (default: ~/.config/retask/config.yaml)")
 
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		// Apply env overrides for flags not explicitly set
 		if gf.Profile == "" {
 			gf.Profile = os.Getenv("RETASK_PROFILE")
-		}
-		if gf.WorkspaceID == "" {
-			gf.WorkspaceID = os.Getenv("NWEB_WORKSPACE_ID")
 		}
 		if os.Getenv("RETASK_NO_PERSIST") != "" {
 			gf.NoSave = true
 		}
+
+		// Resolve workspace ID: flag > env > profile
+		configPath := gf.ConfigPath
+		if configPath == "" {
+			configPath = config.DefaultConfigPath()
+		}
+		if cfg, err := config.Load(configPath); err == nil {
+			profile := cfg.ActiveProfileData(gf.Profile)
+			gf.WorkspaceID = flags.ResolveWorkspaceID(gf.WorkspaceID, profile)
+		} else {
+			gf.WorkspaceID = flags.ResolveWorkspaceID(gf.WorkspaceID, config.Profile{})
+		}
+
 		return nil
 	}
 
