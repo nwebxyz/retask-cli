@@ -27,3 +27,6 @@ api-contracts
 
 # Claude Code
 .worktrees
+
+# GoReleaser output
+dist/
