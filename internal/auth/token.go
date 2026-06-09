@@ -154,13 +154,14 @@ func NewResolver(profile config.Profile, profileName, workspaceIDFlag, configPat
 			if err != nil {
 				return
 			}
-			p := cfg.ActiveProfileData(profileName)
+			name := cfg.ResolveProfileName(profileName)
+			p := cfg.ActiveProfileData(name)
 			p.CachedJWT = jwt
 			p.JWTExpiresAt = expiresAt
 			if wsID != "" {
 				p.WorkspaceID = wsID
 			}
-			cfg.SetProfile(profileName, p)
+			cfg.SetProfile(name, p)
 			_ = cfg.Save(configPath)
 		}
 	}

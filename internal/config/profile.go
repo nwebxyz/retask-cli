@@ -80,6 +80,18 @@ func (c *Config) ActiveProfileData(name string) Profile {
 	return p
 }
 
+// ResolveProfileName returns the effective profile name, falling back to
+// ActiveProfile and then "default" when name is empty.
+func (c *Config) ResolveProfileName(name string) string {
+	if name != "" {
+		return name
+	}
+	if c.ActiveProfile != "" {
+		return c.ActiveProfile
+	}
+	return "default"
+}
+
 // SetProfile upserts a profile.
 func (c *Config) SetProfile(name string, p Profile) {
 	if c.Profiles == nil {
