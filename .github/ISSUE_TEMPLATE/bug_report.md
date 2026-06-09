@@ -1,0 +1,33 @@
+---
+name: Bug report
+about: Report a problem to help us improve
+title: "[Bug] "
+labels: bug
+assignees: ''
+---
+
+## Describe the bug
+
+A clear and concise description of what the bug is.
+
+## To reproduce
+
+Steps to reproduce the behavior:
+
+1. Run '...'
+2. With arguments '...'
+3. See error
+
+## Expected behavior
+
+What you expected to happen.
+
+## Environment
+
+- retask-cli version:
+- OS:
+- Runtime/version (e.g. Node/Python):
+
+## Additional context
+
+Add any other context, logs, or screenshots here.
