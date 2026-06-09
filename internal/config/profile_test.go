@@ -16,7 +16,7 @@ func TestLoadMissing(t *testing.T) {
 	cfg, err := config.Load("/tmp/retask-test-nonexistent-abc123.yaml")
 	require.NoError(t, err)
 	p := cfg.ActiveProfileData("")
-	assert.Equal(t, "api.dev.nweb.app:443", p.Endpoint)
+	assert.Equal(t, "api.nweb.app:443", p.Endpoint)
 }
 
 func TestSaveAndLoad(t *testing.T) {
@@ -27,7 +27,7 @@ func TestSaveAndLoad(t *testing.T) {
 		ActiveProfile: "default",
 		Profiles: map[string]config.Profile{
 			"default": {
-				Endpoint:     "api.dev.nweb.app:443",
+				Endpoint:     "api.nweb.app:443",
 				WorkspaceID:  "ws_abc",
 				CachedJWT:    "tok123",
 				JWTExpiresAt: exp,

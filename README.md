@@ -75,7 +75,7 @@ Nothing is written to disk. Each shell session is fully isolated.
 |---|---|---|
 | `NWEB_API_KEY` | Yes* | Personal Access Token (`nweb_pat_...`). Never stored. |
 | `NWEB_API_TOKEN` | No | Ready-to-use JWT. If set, skips PAT exchange entirely. |
-| `NWEB_API_ENDPOINT` | No | Default: `api.dev.nweb.app:443` |
+| `NWEB_API_ENDPOINT` | No | Default: `api.nweb.app:443` |
 | `NWEB_WORKSPACE_ID` | Yes* | Workspace scope. Required for most commands. |
 | `RETASK_PROFILE` | No | Active profile name. Default: `default`. |
 | `RETASK_NO_PERSIST` | No | Suppress all credential writes to disk. |
@@ -156,7 +156,7 @@ See [`skills/retask-cli.md`](skills/retask-cli.md) for the Claude Code skill fil
 active_profile: default
 profiles:
   default:
-    endpoint: api.dev.nweb.app:443
+    endpoint: api.nweb.app:443
     workspace_id: ws_abc123
   staging:
     endpoint: api.staging.nweb.app:443

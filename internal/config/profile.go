@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const DefaultEndpoint = "api.dev.nweb.app:443"
+const DefaultEndpoint = "api.nweb.app:443"
 
 type Profile struct {
 	Endpoint     string    `yaml:"endpoint"`

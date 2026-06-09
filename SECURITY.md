@@ -11,7 +11,7 @@ Instead, report it privately using one of the following:
 
 - GitHub's [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
   (Security tab → "Report a vulnerability"), or
-- Email: security@nweb.co
+- Email: security@nweb.xyz
 
 Please include:
 

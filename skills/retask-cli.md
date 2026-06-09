@@ -19,7 +19,7 @@ eval $(retask auth login --no-save)
 
 ## Optional env
 - `NWEB_API_TOKEN` — Ready-to-use JWT (skips PAT exchange)
-- `NWEB_API_ENDPOINT` — API endpoint (default: `api.dev.nweb.app:443`)
+- `NWEB_API_ENDPOINT` — API endpoint (default: `api.nweb.app:443`)
 - `RETASK_PROFILE` — Config profile name (default: `default`)
 - `RETASK_NO_PERSIST` — Don't write credentials to disk
 
