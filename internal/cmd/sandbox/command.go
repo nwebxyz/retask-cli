@@ -94,6 +94,10 @@ Output fields: sandbox_id, workspace_id, name, type, status, created_at, updated
 				filter.Types = []sandboxv1.Sandbox_Type{sandboxv1.Sandbox_Type(v)}
 			}
 
+			if gf.WorkspaceID != "" {
+				filter.WorkspaceId = gf.WorkspaceID
+			}
+
 			svc, close, err := connect(gf)
 			if err != nil {
 				return err
@@ -350,6 +354,10 @@ Output fields: session_id, sandbox_id, workspace_id, name, status, mode, started
 					return fmt.Errorf("invalid --status %q. Valid values: ACTIVE, IDLE, TIMEOUT, STOPPED", status)
 				}
 				filter.Statuses = []sandboxv1.Session_Status{sandboxv1.Session_Status(v)}
+			}
+
+			if gf.WorkspaceID != "" {
+				filter.WorkspaceId = gf.WorkspaceID
 			}
 
 			svc, close, err := connect(gf)
