@@ -12,10 +12,16 @@ A command-line interface for [Retask.work](https://retask.work) — manage works
 
 ## Installation
 
-### Homebrew (macOS / Linux)
+### macOS / Linux
 
 ```bash
-brew install nwebxyz/tap/retask
+curl -fsSL https://retask.work/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://retask.work/install.ps1 | iex
 ```
 
 ### Go install
