@@ -105,6 +105,10 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 				filter.Priority = taskv1.Task_Priority(v)
 			}
 
+			if gf.WorkspaceID != "" {
+				filter.WorkspaceId = gf.WorkspaceID
+			}
+
 			resp, err := svc.GetTasks(context.Background(), &taskv1.TasksRequest{
 				Filter: filter,
 			})
