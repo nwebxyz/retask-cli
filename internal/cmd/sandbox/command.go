@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/cobra"
 	connectrpc "connectrpc.com/connect"
+	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
