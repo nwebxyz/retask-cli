@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
@@ -13,6 +14,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	agentv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/agent/v1"
+	agentv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/agent/v1/agentv1connect"
 )
 
 // NewCommand returns the top-level "agent" cobra command.
@@ -33,7 +35,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns an AgentServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (agentv1.AgentServiceClient, func(), error) {
+func connect(gf *flags.Global) (agentv1connect.AgentServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -48,11 +50,9 @@ func connect(gf *flags.Global) (agentv1.AgentServiceClient, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return agentv1.NewAgentServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return agentv1connect.NewAgentServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // validRoles returns the set of valid role string values (excluding ROLE_UNKNOWN).
@@ -106,13 +106,13 @@ Output fields: agent_id, workspace_id, name, description, role, sandbox_template
 			}
 			defer close()
 
-			resp, err := svc.GetAgents(context.Background(), &agentv1.AgentsRequest{
+			resp, err := svc.GetAgents(context.Background(), connectrpc.NewRequest(&agentv1.AgentsRequest{
 				Filter: filter,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Agents)
+			return output.Print(gf.Pretty, resp.Msg.Agents)
 		},
 	}
 	cmd.Flags().StringVar(&role, "role", "", "Filter by role: ROLE_UNKNOWN, ROLE_TASK_PLANNER, ROLE_TASK_PROCESSOR")
@@ -138,11 +138,11 @@ Output fields: agent_id, workspace_id, name, description, role, sandbox_template
 				return err
 			}
 			defer close()
-			agent, err := svc.GetAgent(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetAgent(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, agent)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -201,11 +201,11 @@ Output fields: agent_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetAgent(context.Background(), agent)
+			resp, err := svc.SetAgent(context.Background(), connectrpc.NewRequest(agent))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"agent_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"agent_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Agent name (required)")
@@ -245,33 +245,33 @@ Output fields: agent_id`,
 			defer close()
 
 			// Fetch existing to preserve unset fields.
-			existing, err := svc.GetAgent(context.Background(), &commonv1.Id{Id: args[0]})
+			existingResp, err := svc.GetAgent(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
 
 			if cmd.Flags().Changed("name") {
-				existing.Name = name
+				existingResp.Msg.Name = name
 			}
 			if cmd.Flags().Changed("description") {
-				existing.Description = description
+				existingResp.Msg.Description = description
 			}
 			if cmd.Flags().Changed("role") {
 				r, err := parseRole(role)
 				if err != nil {
 					return err
 				}
-				existing.Role = r
+				existingResp.Msg.Role = r
 			}
 			if cmd.Flags().Changed("sandbox-template-id") {
-				existing.SandboxTemplateId = sandboxTemplateID
+				existingResp.Msg.SandboxTemplateId = sandboxTemplateID
 			}
 
-			id, err := svc.SetAgent(context.Background(), existing)
+			resp, err := svc.SetAgent(context.Background(), connectrpc.NewRequest(existingResp.Msg))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"agent_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"agent_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New agent name")
@@ -300,7 +300,7 @@ Output fields: status, agent_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteAgent(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteAgent(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
