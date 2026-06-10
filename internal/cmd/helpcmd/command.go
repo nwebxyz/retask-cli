@@ -125,6 +125,7 @@ func buildManifest() manifest {
 			{Command: "retask agent create", Description: "Create an agent", Flags: []string{"--name", "--role", "--description", "--sandbox-template-id"}, Example: "retask agent create --name 'Task Bot' --role ROLE_TASK_PROCESSOR"},
 			{Command: "retask agent update", Description: "Update an agent", Flags: []string{"--name", "--role", "--description", "--sandbox-template-id"}, Example: "retask agent update <id> --name 'New Name'"},
 			{Command: "retask agent delete", Description: "Delete an agent", Example: "retask agent delete <agent-id>"},
+			{Command: "retask upgrade", Description: "Upgrade retask to the latest version", Example: "retask upgrade"},
 		},
 	}
 }
