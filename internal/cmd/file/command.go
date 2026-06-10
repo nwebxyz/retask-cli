@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"github.com/nwebxyz/retask-cli/internal/auth"
@@ -15,6 +16,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	filev1 "github.com/nwebxyz/retask-cli/proto-gen/file/v1"
+	filev1connect "github.com/nwebxyz/retask-cli/proto-gen/file/v1/filev1connect"
 )
 
 // NewCommand returns the top-level "file" cobra command.
@@ -34,7 +36,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a FileServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (filev1.FileServiceClient, func(), error) {
+func connect(gf *flags.Global) (filev1connect.FileServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -49,11 +51,9 @@ func connect(gf *flags.Global) (filev1.FileServiceClient, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return filev1.NewFileServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return filev1connect.NewFileServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── file list ──────────────────────────────────────────────────────────────
@@ -88,11 +88,11 @@ Output fields: file_id, project_id, file_name, mime_type, bytes, created_at`,
 				}
 			}
 
-			resp, err := svc.GetFiles(context.Background(), req)
+			resp, err := svc.GetFiles(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Files)
+			return output.Print(gf.Pretty, resp.Msg.Files)
 		},
 	}
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Filter files by project ID")
@@ -118,11 +118,11 @@ Output fields: file_id, project_id, file_name, mime_type, bytes, storage_path, c
 				return err
 			}
 			defer close()
-			f, err := svc.GetFile(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetFile(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, f)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -146,7 +146,7 @@ Output fields: status, file_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteFile(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteFile(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -191,11 +191,11 @@ Output fields: file_id, signed_url, expires_at`,
 				return err
 			}
 			defer close()
-			resp, err := svc.GetFileSignedUrl(context.Background(), req)
+			resp, err := svc.GetFileSignedUrl(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 	cmd.Flags().StringVar(&expiresIn, "expires-in", "", "Duration the signed URL is valid (e.g. 15m, 1h, 24h)")
