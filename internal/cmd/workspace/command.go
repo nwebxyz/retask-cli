@@ -51,7 +51,7 @@ func connect(gf *flags.Global) (workspacev1connect.WorkspaceServiceClient, func(
 	if err != nil {
 		return nil, nil, err
 	}
-	httpClient := client.New(jwt, gf.Insecure)
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 	return workspacev1connect.NewWorkspaceServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }

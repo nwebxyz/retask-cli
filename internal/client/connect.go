@@ -3,7 +3,9 @@ package client
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -22,16 +24,39 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(req)
 }
 
+type debugTransport struct {
+	base http.RoundTripper
+}
+
+func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	fmt.Fprintf(os.Stderr, "[retask] > %s %s\n", req.Method, req.URL)
+	if req.Header.Get("Authorization") != "" {
+		fmt.Fprintf(os.Stderr, "[retask]   Authorization: Bearer [redacted]\n")
+	}
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[retask] < ERROR: %v\n", err)
+		return nil, err
+	}
+	fmt.Fprintf(os.Stderr, "[retask] < %s\n", resp.Status)
+	return resp, nil
+}
+
 // New returns an *http.Client that injects Authorization: Bearer <jwt> on every request.
 // Empty jwt skips the header (proxy-injected auth). insecure=true disables TLS verification.
-func New(jwt string, insecure bool) *http.Client {
+// verbose=true wraps the transport with a debugTransport that logs requests/responses to stderr.
+func New(jwt string, insecure bool, verbose bool) *http.Client {
 	var base http.RoundTripper = http.DefaultTransport
 	if insecure {
 		base = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 		}
 	}
-	return &http.Client{Transport: &authTransport{jwt: jwt, base: base}}
+	var transport http.RoundTripper = &authTransport{jwt: jwt, base: base}
+	if verbose {
+		transport = &debugTransport{base: transport}
+	}
+	return &http.Client{Transport: transport}
 }
 
 // BaseURL converts a gRPC-style endpoint to an HTTPS base URL.

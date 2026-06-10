@@ -103,7 +103,7 @@ func (r *Resolver) resolveWorkspaceID() (string, error) {
 func (r *Resolver) exchangePAT(ctx context.Context, pat, workspaceID string) (string, time.Time, error) {
 	// PAT exchange never carries a JWT header — the PAT is in the request body.
 	// Always use gRPC protocol regardless of NWEB_API_TRANSPORT (internal auth call).
-	httpClient := client.New("", r.Insecure)
+	httpClient := client.New("", r.Insecure, false)
 	baseURL := client.BaseURL(r.Profile.Endpoint, r.Insecure)
 	authClient := authv1connect.NewAuthServiceClient(httpClient, baseURL, connect.WithGRPC())
 	resp, err := authClient.ExchangePat(ctx, connect.NewRequest(&authv1.PatExchangeRequest{

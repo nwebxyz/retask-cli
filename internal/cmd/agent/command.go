@@ -50,7 +50,7 @@ func connect(gf *flags.Global) (agentv1connect.AgentServiceClient, func(), error
 	if err != nil {
 		return nil, nil, err
 	}
-	httpClient := client.New(jwt, gf.Insecure)
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 	return agentv1connect.NewAgentServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }

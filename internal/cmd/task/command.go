@@ -53,7 +53,7 @@ func connect(gf *flags.Global) (taskv1connect.TaskServiceClient, func(), error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	httpClient := client.New(jwt, gf.Insecure)
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 	return taskv1connect.NewTaskServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }

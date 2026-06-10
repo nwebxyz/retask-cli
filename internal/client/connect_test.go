@@ -55,7 +55,7 @@ func TestNewInjectsAuthHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := client.New("my-token", false)
+	c := client.New("my-token", false, false)
 	resp, err := c.Get(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestNewSkipsAuthHeaderWhenEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := client.New("", false)
+	c := client.New("", false, false)
 	resp, err := c.Get(srv.URL)
 	if err != nil {
 		t.Fatal(err)

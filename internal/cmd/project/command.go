@@ -53,7 +53,7 @@ func connect(gf *flags.Global) (projectv1connect.ProjectServiceClient, func(), e
 	if err != nil {
 		return nil, nil, err
 	}
-	httpClient := client.New(jwt, gf.Insecure)
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 	return projectv1connect.NewProjectServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }

@@ -168,7 +168,7 @@ Output fields: pat_id, name, masked_value, scopes, expires_at, last_used_at`,
 				return err
 			}
 			profile, _, _ := loadProfile(gf)
-			httpClient := client.New(jwt, gf.Insecure)
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 			resp, err := authv1connect.NewAuthServiceClient(httpClient, baseURL, client.Options(gf.Transport)...).GetPats(
 				context.Background(), connect.NewRequest(&authv1.PatsRequest{}))
@@ -221,7 +221,7 @@ Flags:
 				}
 				req.ExpiresAt = timestamppb.New(t)
 			}
-			httpClient := client.New(jwt, gf.Insecure)
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 			resp, err := authv1connect.NewAuthServiceClient(httpClient, baseURL, client.Options(gf.Transport)...).CreatePat(
 				context.Background(), connect.NewRequest(req))
@@ -259,7 +259,7 @@ Usage example:
 				return err
 			}
 			profile, _, _ := loadProfile(gf)
-			httpClient := client.New(jwt, gf.Insecure)
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 			_, err = authv1connect.NewAuthServiceClient(httpClient, baseURL, client.Options(gf.Transport)...).RevokePat(
 				context.Background(), connect.NewRequest(&commonv1.Id{Id: args[0]}))

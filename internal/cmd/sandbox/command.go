@@ -52,7 +52,7 @@ func connect(gf *flags.Global) (sandboxv1connect.SandboxServiceClient, func(), e
 	if err != nil {
 		return nil, nil, err
 	}
-	httpClient := client.New(jwt, gf.Insecure)
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 	return sandboxv1connect.NewSandboxServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }

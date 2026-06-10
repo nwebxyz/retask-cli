@@ -51,7 +51,7 @@ func connect(gf *flags.Global) (integrationv1connect.IntegrationServiceClient, f
 	if err != nil {
 		return nil, nil, err
 	}
-	httpClient := client.New(jwt, gf.Insecure)
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
 	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
 	return integrationv1connect.NewIntegrationServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
