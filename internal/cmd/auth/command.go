@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"github.com/nwebxyz/retask-cli/internal/auth"
@@ -15,6 +16,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/flags"
 	"github.com/nwebxyz/retask-cli/internal/output"
 	authv1 "github.com/nwebxyz/retask-cli/proto-gen/auth/v1"
+	authv1connect "github.com/nwebxyz/retask-cli/proto-gen/auth/v1/authv1connect"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
@@ -166,16 +168,14 @@ Output fields: pat_id, name, masked_value, scopes, expires_at, last_used_at`,
 				return err
 			}
 			profile, _, _ := loadProfile(gf)
-			conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+			resp, err := authv1connect.NewAuthServiceClient(httpClient, baseURL, client.Options(gf.Transport)...).GetPats(
+				context.Background(), connect.NewRequest(&authv1.PatsRequest{}))
 			if err != nil {
 				return err
 			}
-			defer conn.Close()
-			resp, err := authv1.NewAuthServiceClient(conn).GetPats(context.Background(), &authv1.PatsRequest{})
-			if err != nil {
-				return err
-			}
-			return output.Print(gf.Pretty, resp.Pats)
+			return output.Print(gf.Pretty, resp.Msg.Pats)
 		},
 	}
 }
@@ -208,11 +208,6 @@ Flags:
 				return err
 			}
 			profile, _, _ := loadProfile(gf)
-			conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-			if err != nil {
-				return err
-			}
-			defer conn.Close()
 
 			req := &authv1.CreatePatRequest{
 				Name:        name,
@@ -226,13 +221,16 @@ Flags:
 				}
 				req.ExpiresAt = timestamppb.New(t)
 			}
-			resp, err := authv1.NewAuthServiceClient(conn).CreatePat(context.Background(), req)
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+			resp, err := authv1connect.NewAuthServiceClient(httpClient, baseURL, client.Options(gf.Transport)...).CreatePat(
+				context.Background(), connect.NewRequest(req))
 			if err != nil {
 				return err
 			}
 			return output.Print(gf.Pretty, map[string]any{
-				"pat":       resp.Pat,
-				"raw_token": resp.RawToken,
+				"pat":       resp.Msg.Pat,
+				"raw_token": resp.Msg.RawToken,
 			})
 		},
 	}
@@ -261,15 +259,10 @@ Usage example:
 				return err
 			}
 			profile, _, _ := loadProfile(gf)
-			conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-			if err != nil {
-				return err
-			}
-			defer conn.Close()
-			_, err = authv1.NewAuthServiceClient(conn).RevokePat(
-				context.Background(),
-				&commonv1.Id{Id: args[0]},
-			)
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+			_, err = authv1connect.NewAuthServiceClient(httpClient, baseURL, client.Options(gf.Transport)...).RevokePat(
+				context.Background(), connect.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}

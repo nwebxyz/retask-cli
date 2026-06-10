@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
+
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
@@ -13,6 +15,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	taskv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/task/v1"
+	taskv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/task/v1/taskv1connect"
 )
 
 // NewCommand returns the top-level "task" cobra command.
@@ -35,7 +38,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a TaskServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (taskv1.TaskServiceClient, func(), error) {
+func connect(gf *flags.Global) (taskv1connect.TaskServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -50,11 +53,9 @@ func connect(gf *flags.Global) (taskv1.TaskServiceClient, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return taskv1.NewTaskServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return taskv1connect.NewTaskServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── task list ─────────────────────────────────────────────────────────────────
@@ -109,13 +110,13 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 				filter.WorkspaceId = gf.WorkspaceID
 			}
 
-			resp, err := svc.GetTasks(context.Background(), &taskv1.TasksRequest{
+			resp, err := svc.GetTasks(context.Background(), connectrpc.NewRequest(&taskv1.TasksRequest{
 				Filter: filter,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Tasks)
+			return output.Print(gf.Pretty, resp.Msg.Tasks)
 		},
 	}
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Filter by project ID")
@@ -144,11 +145,11 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 				return err
 			}
 			defer close()
-			task, err := svc.GetTask(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetTask(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, task)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -184,14 +185,14 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 				return err
 			}
 			defer close()
-			task, err := svc.GetTaskByKey(context.Background(), &taskv1.TaskByKeyRequest{
+			resp, err := svc.GetTaskByKey(context.Background(), connectrpc.NewRequest(&taskv1.TaskByKeyRequest{
 				WorkspaceId: wsID,
 				Key:         args[0],
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, task)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID (overrides global flag and env var)")
@@ -254,11 +255,11 @@ Output fields: task_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetTask(context.Background(), task)
+			resp, err := svc.SetTask(context.Background(), connectrpc.NewRequest(task))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"task_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"task_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Project ID (required)")
@@ -327,14 +328,14 @@ Output fields: task_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetPartialTask(context.Background(), &commonv1.PartialData{
+			resp, err := svc.SetPartialTask(context.Background(), connectrpc.NewRequest(&commonv1.PartialData{
 				Id:   args[0],
 				Data: data,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"task_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"task_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "New task title")
@@ -365,7 +366,7 @@ Output fields: status, task_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteTask(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteTask(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -405,14 +406,14 @@ Output fields: task_id, attachments`,
 				return err
 			}
 			defer close()
-			task, err := svc.AddTaskAttachment(context.Background(), &taskv1.AddTaskAttachmentRequest{
+			resp, err := svc.AddTaskAttachment(context.Background(), connectrpc.NewRequest(&taskv1.AddTaskAttachmentRequest{
 				TaskId: args[0],
 				FileId: args[1],
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, task)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -434,14 +435,14 @@ Output fields: task_id, attachments`,
 				return err
 			}
 			defer close()
-			task, err := svc.DeleteTaskAttachment(context.Background(), &taskv1.DeleteTaskAttachmentRequest{
+			resp, err := svc.DeleteTaskAttachment(context.Background(), connectrpc.NewRequest(&taskv1.DeleteTaskAttachmentRequest{
 				TaskId: args[0],
 				FileId: args[1],
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, task)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }

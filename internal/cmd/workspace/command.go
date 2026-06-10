@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
@@ -13,6 +14,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	workspacev1 "github.com/nwebxyz/retask-cli/proto-gen/workspace/v1"
+	workspacev1connect "github.com/nwebxyz/retask-cli/proto-gen/workspace/v1/workspacev1connect"
 )
 
 // NewCommand returns the top-level "workspace" cobra command.
@@ -34,7 +36,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a WorkspaceServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (workspacev1.WorkspaceServiceClient, func(), error) {
+func connect(gf *flags.Global) (workspacev1connect.WorkspaceServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -49,11 +51,9 @@ func connect(gf *flags.Global) (workspacev1.WorkspaceServiceClient, func(), erro
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return workspacev1.NewWorkspaceServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return workspacev1connect.NewWorkspaceServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── workspace list ────────────────────────────────────────────────────────────
@@ -75,11 +75,11 @@ Output fields: workspace_id, name, description, color, created_at, updated_at`,
 				return err
 			}
 			defer close()
-			resp, err := svc.GetWorkspaces(context.Background(), &workspacev1.WorkspacesRequest{})
+			resp, err := svc.GetWorkspaces(context.Background(), connectrpc.NewRequest(&workspacev1.WorkspacesRequest{}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Workspaces)
+			return output.Print(gf.Pretty, resp.Msg.Workspaces)
 		},
 	}
 }
@@ -103,11 +103,11 @@ Output fields: workspace_id, name, description, color, created_at, updated_at`,
 				return err
 			}
 			defer close()
-			ws, err := svc.GetWorkspace(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetWorkspace(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, ws)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -139,15 +139,15 @@ Output fields: workspace_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetWorkspace(context.Background(), &workspacev1.Workspace{
+			resp, err := svc.SetWorkspace(context.Background(), connectrpc.NewRequest(&workspacev1.Workspace{
 				Name:        name,
 				Description: description,
 				Color:       color,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"workspace_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"workspace_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Workspace display name (required)")
@@ -186,26 +186,26 @@ Output fields: workspace_id`,
 			defer close()
 
 			// Fetch existing to preserve unset fields.
-			existing, err := svc.GetWorkspace(context.Background(), &commonv1.Id{Id: args[0]})
+			existingResp, err := svc.GetWorkspace(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
 
 			if cmd.Flags().Changed("name") {
-				existing.Name = name
+				existingResp.Msg.Name = name
 			}
 			if cmd.Flags().Changed("description") {
-				existing.Description = description
+				existingResp.Msg.Description = description
 			}
 			if cmd.Flags().Changed("color") {
-				existing.Color = color
+				existingResp.Msg.Color = color
 			}
 
-			id, err := svc.SetWorkspace(context.Background(), existing)
+			resp, err := svc.SetWorkspace(context.Background(), connectrpc.NewRequest(existingResp.Msg))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"workspace_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"workspace_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New display name")
@@ -233,7 +233,7 @@ Output fields: status, workspace_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteWorkspace(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteWorkspace(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -275,13 +275,13 @@ Output fields: workspace_member_id, workspace_id, role, invited_email, display_n
 				return err
 			}
 			defer close()
-			resp, err := svc.GetWorkspaceMembers(context.Background(), &workspacev1.WorkspaceMembersRequest{
+			resp, err := svc.GetWorkspaceMembers(context.Background(), connectrpc.NewRequest(&workspacev1.WorkspaceMembersRequest{
 				WorkspaceId: args[0],
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Members)
+			return output.Print(gf.Pretty, resp.Msg.Members)
 		},
 	}
 }
@@ -320,12 +320,12 @@ Output fields: status`,
 				return err
 			}
 			defer close()
-			_, err = svc.InviteWorkspaceMember(context.Background(), &workspacev1.InviteWorkspaceMemberRequest{
+			_, err = svc.InviteWorkspaceMember(context.Background(), connectrpc.NewRequest(&workspacev1.InviteWorkspaceMemberRequest{
 				WorkspaceId:  args[0],
 				InvitedEmail: email,
 				DisplayName:  displayName,
 				Role:         workspacev1.WorkspaceMemberRole(v),
-			})
+			}))
 			if err != nil {
 				return err
 			}
@@ -379,7 +379,7 @@ Output fields: status`,
 				return err
 			}
 			defer close()
-			_, err = svc.UpdateWorkspaceMember(context.Background(), req)
+			_, err = svc.UpdateWorkspaceMember(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}
@@ -408,10 +408,10 @@ Output fields: status, workspace_member_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.RemoveWorkspaceMember(context.Background(), &workspacev1.RemoveWorkspaceMemberRequest{
+			_, err = svc.RemoveWorkspaceMember(context.Background(), connectrpc.NewRequest(&workspacev1.RemoveWorkspaceMemberRequest{
 				WorkspaceId:       args[0],
 				WorkspaceMemberId: args[1],
-			})
+			}))
 			if err != nil {
 				return err
 			}

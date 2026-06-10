@@ -15,6 +15,8 @@ type Global struct {
 	Insecure    bool
 	NoSave      bool
 	ConfigPath  string
+	Transport   string
+	Verbose     bool
 }
 
 // ResolveWorkspaceID returns the effective workspace ID using priority:

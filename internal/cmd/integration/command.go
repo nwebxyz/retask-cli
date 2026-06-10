@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
@@ -13,6 +14,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	integrationv1 "github.com/nwebxyz/retask-cli/proto-gen/integration/v1"
+	integrationv1connect "github.com/nwebxyz/retask-cli/proto-gen/integration/v1/integrationv1connect"
 )
 
 // NewCommand returns the top-level "integration" cobra command.
@@ -34,7 +36,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns an IntegrationServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (integrationv1.IntegrationServiceClient, func(), error) {
+func connect(gf *flags.Global) (integrationv1connect.IntegrationServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -49,11 +51,9 @@ func connect(gf *flags.Global) (integrationv1.IntegrationServiceClient, func(), 
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return integrationv1.NewIntegrationServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return integrationv1connect.NewIntegrationServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── integration provider ──────────────────────────────────────────────────────
@@ -87,11 +87,11 @@ Output fields: provider_id, name, logo, disable_oauth_flow, disable_access_token
 				return err
 			}
 			defer close()
-			resp, err := svc.GetProviders(context.Background(), &integrationv1.ProvidersRequest{})
+			resp, err := svc.GetProviders(context.Background(), connectrpc.NewRequest(&integrationv1.ProvidersRequest{}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Providers)
+			return output.Print(gf.Pretty, resp.Msg.Providers)
 		},
 	}
 }
@@ -113,11 +113,11 @@ Output fields: provider_id, name, logo, disable_oauth_flow, disable_access_token
 				return err
 			}
 			defer close()
-			provider, err := svc.GetProvider(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetProvider(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, provider)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -154,13 +154,13 @@ Output fields: integration_id, workspace_id, provider_id, level, owner_member_id
 				filter.ProviderIds = []string{providerID}
 			}
 
-			resp, err := svc.GetIntegrations(context.Background(), &integrationv1.IntegrationsRequest{
+			resp, err := svc.GetIntegrations(context.Background(), connectrpc.NewRequest(&integrationv1.IntegrationsRequest{
 				Filter: filter,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Integrations)
+			return output.Print(gf.Pretty, resp.Msg.Integrations)
 		},
 	}
 	cmd.Flags().StringVar(&providerID, "provider-id", "", "Filter by provider ID (e.g. \"github\")")
@@ -186,11 +186,11 @@ Output fields: integration_id, workspace_id, provider_id, level, owner_member_id
 				return err
 			}
 			defer close()
-			intg, err := svc.GetIntegration(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetIntegration(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, intg)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -239,18 +239,18 @@ Output fields: id`,
 			}
 			defer close()
 
-			id, err := svc.SetIntegration(context.Background(), &integrationv1.Integration{
+			resp, err := svc.SetIntegration(context.Background(), connectrpc.NewRequest(&integrationv1.Integration{
 				WorkspaceId: gf.WorkspaceID,
 				ProviderId:  providerID,
 				Level:       integrationv1.Integration_Level(levelVal),
 				Credentials: &integrationv1.Integration_Credentials{
 					AccessToken: accessToken,
 				},
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&providerID, "provider-id", "", "Provider ID (e.g. \"github\") (required)")
@@ -279,7 +279,7 @@ Output fields: status, integration_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteIntegration(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteIntegration(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -336,11 +336,11 @@ Output fields: name, clone_url, default_branch, private`,
 			}
 			defer close()
 
-			resp, err := svc.GetGithubRepos(context.Background(), req)
+			resp, err := svc.GetGithubRepos(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Repos)
+			return output.Print(gf.Pretty, resp.Msg.Repos)
 		},
 	}
 	cmd.Flags().StringVar(&levelStr, "level", "", "Integration level: LEVEL_WORKSPACE, LEVEL_MEMBER")
