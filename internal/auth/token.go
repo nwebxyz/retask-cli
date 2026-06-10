@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
+	"connectrpc.com/connect"
+	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
 	authv1 "github.com/nwebxyz/retask-cli/proto-gen/auth/v1"
+	authv1connect "github.com/nwebxyz/retask-cli/proto-gen/auth/v1/authv1connect"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
@@ -101,33 +101,23 @@ func (r *Resolver) resolveWorkspaceID() (string, error) {
 }
 
 func (r *Resolver) exchangePAT(ctx context.Context, pat, workspaceID string) (string, time.Time, error) {
-	var opts []grpc.DialOption
-	if r.Insecure {
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	} else {
-		opts = append(opts, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")))
-	}
-
-	conn, err := grpc.NewClient(r.Profile.Endpoint, opts...)
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	defer conn.Close()
-
-	client := authv1.NewAuthServiceClient(conn)
-	resp, err := client.ExchangePat(ctx, &authv1.PatExchangeRequest{
+	// PAT exchange never carries a JWT header — the PAT is in the request body.
+	// Always use gRPC protocol regardless of NWEB_API_TRANSPORT (internal auth call).
+	httpClient := client.New("", r.Insecure)
+	baseURL := client.BaseURL(r.Profile.Endpoint, r.Insecure)
+	authClient := authv1connect.NewAuthServiceClient(httpClient, baseURL, connect.WithGRPC())
+	resp, err := authClient.ExchangePat(ctx, connect.NewRequest(&authv1.PatExchangeRequest{
 		Token:       pat,
 		WorkspaceId: workspaceID,
-	})
+	}))
 	if err != nil {
 		return "", time.Time{}, err
 	}
-
 	var expiresAt time.Time
-	if resp.ExpiresAt != nil {
-		expiresAt = resp.ExpiresAt.AsTime()
+	if resp.Msg.ExpiresAt != nil {
+		expiresAt = resp.Msg.ExpiresAt.AsTime()
 	}
-	return resp.Jwt, expiresAt, nil
+	return resp.Msg.Jwt, expiresAt, nil
 }
 
 // ExportEnv returns shell export lines for --no-save mode.
