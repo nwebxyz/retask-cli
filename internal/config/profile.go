@@ -77,6 +77,9 @@ func (c *Config) ActiveProfileData(name string) Profile {
 	if p.Endpoint == "" {
 		p.Endpoint = DefaultEndpoint
 	}
+	if v := os.Getenv("NWEB_API_ENDPOINT"); v != "" {
+		p.Endpoint = v
+	}
 	return p
 }
 

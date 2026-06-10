@@ -44,6 +44,30 @@ func TestSaveAndLoad(t *testing.T) {
 	assert.Equal(t, exp, p.JWTExpiresAt)
 }
 
+func TestActiveProfileDataEnvEndpoint(t *testing.T) {
+	t.Setenv("NWEB_API_ENDPOINT", "custom.host:9090")
+	cfg, err := config.Load("/tmp/retask-test-nonexistent-abc123.yaml")
+	require.NoError(t, err)
+	p := cfg.ActiveProfileData("")
+	assert.Equal(t, "custom.host:9090", p.Endpoint)
+}
+
+func TestActiveProfileDataEnvEndpointOverridesProfile(t *testing.T) {
+	t.Setenv("NWEB_API_ENDPOINT", "override.host:1234")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := &config.Config{
+		ActiveProfile: "default",
+		Profiles: map[string]config.Profile{
+			"default": {Endpoint: "profile.host:443"},
+		},
+	}
+	require.NoError(t, cfg.Save(path))
+	loaded, err := config.Load(path)
+	require.NoError(t, err)
+	p := loaded.ActiveProfileData("")
+	assert.Equal(t, "override.host:1234", p.Endpoint)
+}
+
 func TestFilePermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := &config.Config{ActiveProfile: "default", Profiles: map[string]config.Profile{}}
