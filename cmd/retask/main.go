@@ -44,6 +44,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&gf.Insecure, "insecure", false, "Skip TLS verification (local dev only)")
 	root.PersistentFlags().BoolVar(&gf.NoSave, "no-save", false, "Don't write credentials to config file")
 	root.PersistentFlags().StringVar(&gf.ConfigPath, "config", "", "Config file path (default: ~/.config/retask/config.yaml)")
+	root.PersistentFlags().StringVar(&gf.Transport, "transport", "", "API transport: grpc or connect (env: NWEB_API_TRANSPORT)")
 
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if gf.Profile == "" {
@@ -51,6 +52,9 @@ func newRootCommand() *cobra.Command {
 		}
 		if os.Getenv("RETASK_NO_PERSIST") != "" {
 			gf.NoSave = true
+		}
+		if gf.Transport == "" {
+			gf.Transport = os.Getenv("NWEB_API_TRANSPORT")
 		}
 
 		// Resolve workspace ID: flag > env > profile
