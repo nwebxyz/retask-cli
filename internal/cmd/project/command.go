@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
@@ -13,6 +14,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	projectv1 "github.com/nwebxyz/retask-cli/proto-gen/project/v1"
+	projectv1connect "github.com/nwebxyz/retask-cli/proto-gen/project/v1/projectv1connect"
 )
 
 // NewCommand returns the top-level "project" cobra command.
@@ -36,7 +38,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a ProjectServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (projectv1.ProjectServiceClient, func(), error) {
+func connect(gf *flags.Global) (projectv1connect.ProjectServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -51,11 +53,9 @@ func connect(gf *flags.Global) (projectv1.ProjectServiceClient, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return projectv1.NewProjectServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return projectv1connect.NewProjectServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── project list ──────────────────────────────────────────────────────────────
@@ -96,11 +96,11 @@ Output fields: project_id, workspace_id, key, name, description, color, icon, vi
 				}
 			}
 
-			resp, err := svc.GetProjects(context.Background(), req)
+			resp, err := svc.GetProjects(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Projects)
+			return output.Print(gf.Pretty, resp.Msg.Projects)
 		},
 	}
 	cmd.Flags().BoolVar(&archived, "archived", false, "Show only archived projects")
@@ -126,11 +126,11 @@ Output fields: project_id, workspace_id, key, name, description, color, icon, vi
 				return err
 			}
 			defer close()
-			proj, err := svc.GetProject(context.Background(), &commonv1.Id{Id: args[0]})
+			proj, err := svc.GetProject(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, proj)
+			return output.Print(gf.Pretty, proj.Msg)
 		},
 	}
 }
@@ -188,11 +188,11 @@ Output fields: project_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetProject(context.Background(), proj)
+			resp, err := svc.SetProject(context.Background(), connectrpc.NewRequest(proj))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"project_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"project_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Project display name (required)")
@@ -236,36 +236,36 @@ Output fields: project_id`,
 			defer close()
 
 			// Fetch existing to preserve unset fields.
-			existing, err := svc.GetProject(context.Background(), &commonv1.Id{Id: args[0]})
+			existingResp, err := svc.GetProject(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
 
 			if cmd.Flags().Changed("name") {
-				existing.Name = name
+				existingResp.Msg.Name = name
 			}
 			if cmd.Flags().Changed("description") {
-				existing.Description = description
+				existingResp.Msg.Description = description
 			}
 			if cmd.Flags().Changed("color") {
-				existing.Color = color
+				existingResp.Msg.Color = color
 			}
 			if cmd.Flags().Changed("icon") {
-				existing.Icon = icon
+				existingResp.Msg.Icon = icon
 			}
 			if cmd.Flags().Changed("visibility") {
 				v, ok := projectv1.Visibility_value[visibility]
 				if !ok {
 					return fmt.Errorf("invalid --visibility %q. Valid values: VISIBILITY_WORKSPACE_EDIT, VISIBILITY_WORKSPACE_VIEW, VISIBILITY_RESTRICTED", visibility)
 				}
-				existing.Visibility = projectv1.Visibility(v)
+				existingResp.Msg.Visibility = projectv1.Visibility(v)
 			}
 
-			id, err := svc.SetProject(context.Background(), existing)
+			resp, err := svc.SetProject(context.Background(), connectrpc.NewRequest(existingResp.Msg))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"project_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"project_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New display name")
@@ -295,7 +295,7 @@ Output fields: status, project_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.ArchiveProject(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.ArchiveProject(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -323,7 +323,7 @@ Output fields: status, project_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.UnarchiveProject(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.UnarchiveProject(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -351,7 +351,7 @@ Output fields: status, project_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteProject(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteProject(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -392,13 +392,13 @@ Output fields: project_member_id, project_id, role, member (workspace_member_id,
 				return err
 			}
 			defer close()
-			resp, err := svc.GetProjectMembers(context.Background(), &projectv1.ProjectMembersRequest{
+			resp, err := svc.GetProjectMembers(context.Background(), connectrpc.NewRequest(&projectv1.ProjectMembersRequest{
 				ProjectId: args[0],
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Members)
+			return output.Print(gf.Pretty, resp.Msg.Members)
 		},
 	}
 }
@@ -437,13 +437,13 @@ Output fields: status`,
 				return err
 			}
 			defer close()
-			_, err = svc.SetProjectMember(context.Background(), &projectv1.ProjectMember{
+			_, err = svc.SetProjectMember(context.Background(), connectrpc.NewRequest(&projectv1.ProjectMember{
 				ProjectId: args[0],
 				Role:      projectv1.MemberRole(v),
 				Member: &projectv1.WorkspaceMemberSnapshot{
 					WorkspaceMemberId: memberID,
 				},
-			})
+			}))
 			if err != nil {
 				return err
 			}
@@ -472,10 +472,10 @@ Output fields: status, project_member_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.RemoveProjectMember(context.Background(), &projectv1.RemoveProjectMemberRequest{
+			_, err = svc.RemoveProjectMember(context.Background(), connectrpc.NewRequest(&projectv1.RemoveProjectMemberRequest{
 				ProjectId:       args[0],
 				ProjectMemberId: args[1],
-			})
+			}))
 			if err != nil {
 				return err
 			}

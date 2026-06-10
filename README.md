@@ -9,6 +9,8 @@ A command-line interface for [Retask.work](https://retask.work) — manage works
 - **AI-agent friendly** — `retask help-llm` prints a complete JSON manifest for LLM injection; every command has structured `--help`
 - **Shared sandbox support** — `--no-save` / `RETASK_NO_PERSIST` prints `export` lines instead of writing to disk, keeping sessions isolated per shell
 - **Multi-profile config** — manage multiple endpoints and workspaces via `~/.config/retask/config.yaml`
+- **HTTP transport** — `NWEB_API_TRANSPORT=http` switches from gRPC to Connect protocol over HTTP, enabling proxy-based auth injection in secure sandboxes
+- **Verbose logging** — `--verbose` prints the wire protocol, URL, and response status for every request to stderr
 
 ## Installation
 
@@ -69,6 +71,31 @@ eval $(retask auth login --no-save)
 
 Nothing is written to disk. Each shell session is fully isolated.
 
+### HTTP transport (proxy-injected auth)
+
+In secure sandboxes where outbound traffic passes through a proxy that injects `Authorization` headers automatically, use `NWEB_API_TRANSPORT=http` to switch from gRPC to Connect protocol over standard HTTP:
+
+```bash
+export NWEB_API_TRANSPORT=http
+retask task list
+```
+
+The CLI still manages JWT auth normally when the variable is set — this is for environments where the proxy handles auth injection instead. Any value other than `http` (including unset) uses gRPC protocol.
+
+Use `--verbose` to confirm which wire protocol is active:
+
+```bash
+retask project list --verbose
+# [retask] > POST https://api.nweb.app/project.v1.ProjectService/GetProjects [gRPC]
+# [retask]   Authorization: Bearer [redacted]
+# [retask] < 200 OK
+
+NWEB_API_TRANSPORT=http retask project list --verbose
+# [retask] > POST https://api.nweb.app/project.v1.ProjectService/GetProjects [gRPC-Web]
+# [retask]   Authorization: Bearer [redacted]
+# [retask] < 200 OK
+```
+
 ## Authentication
 
 | Variable | Required | Description |
@@ -77,6 +104,7 @@ Nothing is written to disk. Each shell session is fully isolated.
 | `NWEB_API_TOKEN` | No | Ready-to-use JWT. If set, skips PAT exchange entirely. |
 | `NWEB_API_ENDPOINT` | No | Default: `api.nweb.app:443` |
 | `NWEB_WORKSPACE_ID` | Yes* | Workspace scope. Required for most commands. |
+| `NWEB_API_TRANSPORT` | No | Set to `http` to use Connect protocol over HTTP instead of gRPC. |
 | `RETASK_PROFILE` | No | Active profile name. Default: `default`. |
 | `RETASK_NO_PERSIST` | No | Suppress all credential writes to disk. |
 
@@ -94,6 +122,7 @@ Available on every command:
 | `--insecure` | — | Skip TLS (local dev only) |
 | `--no-save` | `RETASK_NO_PERSIST` | Don't write to config file |
 | `--config` | — | Config file path |
+| `--verbose` | — | Print request/response info to stderr |
 
 ## Commands
 

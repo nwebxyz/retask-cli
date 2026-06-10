@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
@@ -14,6 +15,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	customerv1 "github.com/nwebxyz/retask-cli/proto-gen/customer/v1"
+	customerv1connect "github.com/nwebxyz/retask-cli/proto-gen/customer/v1/customerv1connect"
 )
 
 // NewCommand returns the top-level "customer" cobra command.
@@ -32,7 +34,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a CustomerServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (customerv1.CustomerServiceClient, func(), error) {
+func connect(gf *flags.Global) (customerv1connect.CustomerServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -47,11 +49,9 @@ func connect(gf *flags.Global) (customerv1.CustomerServiceClient, func(), error)
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return customerv1.NewCustomerServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return customerv1connect.NewCustomerServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── customer profile ──────────────────────────────────────────────────────────
@@ -85,11 +85,11 @@ Output fields: customer_id, name, email, timezone, appearance_settings, notifica
 				return err
 			}
 			defer close()
-			customer, err := svc.GetMyProfile(context.Background(), &commonv1.Empty{})
+			resp, err := svc.GetMyProfile(context.Background(), connectrpc.NewRequest(&commonv1.Empty{}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, customer)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -131,33 +131,33 @@ Output fields: customer_id`,
 			defer close()
 
 			// Fetch existing profile to preserve unset fields.
-			existing, err := svc.GetMyProfile(context.Background(), &commonv1.Empty{})
+			existingResp, err := svc.GetMyProfile(context.Background(), connectrpc.NewRequest(&commonv1.Empty{}))
 			if err != nil {
 				return err
 			}
 
 			if cmd.Flags().Changed("name") {
-				existing.Name = name
+				existingResp.Msg.Name = name
 			}
 			if cmd.Flags().Changed("email") {
-				existing.Email = email
+				existingResp.Msg.Email = email
 			}
 			if cmd.Flags().Changed("timezone") {
-				existing.Timezone = timezone
+				existingResp.Msg.Timezone = timezone
 			}
 			if cmd.Flags().Changed("theme") {
 				v := customerv1.AppearanceSettings_ThemePreference_value[theme]
-				if existing.AppearanceSettings == nil {
-					existing.AppearanceSettings = &customerv1.AppearanceSettings{}
+				if existingResp.Msg.AppearanceSettings == nil {
+					existingResp.Msg.AppearanceSettings = &customerv1.AppearanceSettings{}
 				}
-				existing.AppearanceSettings.Theme = customerv1.AppearanceSettings_ThemePreference(v)
+				existingResp.Msg.AppearanceSettings.Theme = customerv1.AppearanceSettings_ThemePreference(v)
 			}
 
-			id, err := svc.SetMyProfile(context.Background(), existing)
+			resp, err := svc.SetMyProfile(context.Background(), connectrpc.NewRequest(existingResp.Msg))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"customer_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"customer_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Display name")
@@ -186,11 +186,11 @@ Output fields: customer_id, name, email, timezone, created_at, updated_at`,
 				return err
 			}
 			defer close()
-			resp, err := svc.GetCustomers(context.Background(), &customerv1.CustomersRequest{})
+			resp, err := svc.GetCustomers(context.Background(), connectrpc.NewRequest(&customerv1.CustomersRequest{}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Customers)
+			return output.Print(gf.Pretty, resp.Msg.Customers)
 		},
 	}
 }
@@ -215,11 +215,11 @@ Output fields: customer_id, name, email, timezone, created_at, updated_at`,
 				return err
 			}
 			defer close()
-			customer, err := svc.GetCustomer(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetCustomer(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, customer)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
