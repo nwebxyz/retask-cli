@@ -7,10 +7,10 @@
 package quotav1
 
 import (
+	v1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	v1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	reflect "reflect"
 	sync "sync"
 )
@@ -643,31 +643,31 @@ type Quota struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"_id,omitempty"
-	QuotaId string `protobuf:"bytes,1,opt,name=quota_id,json=quotaId,proto3" json:"quota_id,omitempty"`
+	QuotaId string `protobuf:"bytes,1,opt,name=quota_id,json=quotaId,proto3" json:"quota_id,omitempty" bson:"_id,omitempty"`
 	// @inject_tag: bson:"origin_quota_id"
-	OriginQuotaId string `protobuf:"bytes,2,opt,name=origin_quota_id,json=originQuotaId,proto3" json:"origin_quota_id,omitempty"`
+	OriginQuotaId string `protobuf:"bytes,2,opt,name=origin_quota_id,json=originQuotaId,proto3" json:"origin_quota_id,omitempty" bson:"origin_quota_id"`
 	// @inject_tag: bson:"name"
-	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty" bson:"name"`
 	// @inject_tag: bson:"target"
-	Target string `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
+	Target string `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty" bson:"target"`
 	// @inject_tag: bson:"units"
-	Units []*Quota_Unit `protobuf:"bytes,5,rep,name=units,proto3" json:"units,omitempty"`
+	Units []*Quota_Unit `protobuf:"bytes,5,rep,name=units,proto3" json:"units,omitempty" bson:"units"`
 	// @inject_tag: bson:"default_units"
-	DefaultUnits []*Quota_Unit `protobuf:"bytes,6,rep,name=default_units,json=defaultUnits,proto3" json:"default_units,omitempty"`
+	DefaultUnits []*Quota_Unit `protobuf:"bytes,6,rep,name=default_units,json=defaultUnits,proto3" json:"default_units,omitempty" bson:"default_units"`
 	// @inject_tag: bson:"used_quota_at"
-	UsedQuotaAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=used_quota_at,json=usedQuotaAt,proto3" json:"used_quota_at,omitempty"`
+	UsedQuotaAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=used_quota_at,json=usedQuotaAt,proto3" json:"used_quota_at,omitempty" bson:"used_quota_at"`
 	// @inject_tag: bson:"reset_quota_at"
-	ResetQuotaAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=reset_quota_at,json=resetQuotaAt,proto3" json:"reset_quota_at,omitempty"`
+	ResetQuotaAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=reset_quota_at,json=resetQuotaAt,proto3" json:"reset_quota_at,omitempty" bson:"reset_quota_at"`
 	// @inject_tag: bson:"created_by_nrn"
-	CreatedByNrn *v1.Nrn `protobuf:"bytes,9,opt,name=created_by_nrn,json=createdByNrn,proto3" json:"created_by_nrn,omitempty"`
+	CreatedByNrn *v1.Nrn `protobuf:"bytes,9,opt,name=created_by_nrn,json=createdByNrn,proto3" json:"created_by_nrn,omitempty" bson:"created_by_nrn"`
 	// @inject_tag: bson:"updated_by_nrn"
-	UpdatedByNrn *v1.Nrn `protobuf:"bytes,10,opt,name=updated_by_nrn,json=updatedByNrn,proto3" json:"updated_by_nrn,omitempty"`
+	UpdatedByNrn *v1.Nrn `protobuf:"bytes,10,opt,name=updated_by_nrn,json=updatedByNrn,proto3" json:"updated_by_nrn,omitempty" bson:"updated_by_nrn"`
 	// @inject_tag: bson:"created_at"
-	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty" bson:"created_at"`
 	// @inject_tag: bson:"updated_at"
-	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty" bson:"updated_at"`
 	// @inject_tag: bson:"strategy"
-	Strategy QuotaStrategy `protobuf:"varint,13,opt,name=strategy,proto3,enum=quota.v1.QuotaStrategy" json:"strategy,omitempty"`
+	Strategy QuotaStrategy `protobuf:"varint,13,opt,name=strategy,proto3,enum=quota.v1.QuotaStrategy" json:"strategy,omitempty" bson:"strategy"`
 }
 
 func (x *Quota) Reset() {
@@ -846,30 +846,30 @@ type QuotaEvent struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"_id,omitempty"
-	QuotaEventId string `protobuf:"bytes,1,opt,name=quota_event_id,json=quotaEventId,proto3" json:"quota_event_id,omitempty"`
+	QuotaEventId string `protobuf:"bytes,1,opt,name=quota_event_id,json=quotaEventId,proto3" json:"quota_event_id,omitempty" bson:"_id,omitempty"`
 	// @inject_tag: bson:"quota_id"
-	QuotaId string `protobuf:"bytes,2,opt,name=quota_id,json=quotaId,proto3" json:"quota_id,omitempty"`
+	QuotaId string `protobuf:"bytes,2,opt,name=quota_id,json=quotaId,proto3" json:"quota_id,omitempty" bson:"quota_id"`
 	// @inject_tag: bson:"name"
-	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty" bson:"name"`
 	// @inject_tag: bson:"target"
-	Target string `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty"`
+	Target string `protobuf:"bytes,4,opt,name=target,proto3" json:"target,omitempty" bson:"target"`
 	// @inject_tag: bson:"caller_nrn"
-	CallerNrn *v1.Nrn `protobuf:"bytes,5,opt,name=caller_nrn,json=callerNrn,proto3" json:"caller_nrn,omitempty"` // for RESET events: populated from ResetQuota.initiator_nrn
+	CallerNrn *v1.Nrn `protobuf:"bytes,5,opt,name=caller_nrn,json=callerNrn,proto3" json:"caller_nrn,omitempty" bson:"caller_nrn"` // for RESET events: populated from ResetQuota.initiator_nrn
 	// @inject_tag: bson:"event_type"
-	EventType QuotaEvent_EventType `protobuf:"varint,6,opt,name=event_type,json=eventType,proto3,enum=quota.v1.QuotaEvent_EventType" json:"event_type,omitempty"`
+	EventType QuotaEvent_EventType `protobuf:"varint,6,opt,name=event_type,json=eventType,proto3,enum=quota.v1.QuotaEvent_EventType" json:"event_type,omitempty" bson:"event_type"`
 	// exactly one of these is set, determined by event_type
 	// @inject_tag: bson:"use_info,omitempty"
-	UseInfo *QuotaEvent_UseInfo `protobuf:"bytes,7,opt,name=use_info,json=useInfo,proto3" json:"use_info,omitempty"`
+	UseInfo *QuotaEvent_UseInfo `protobuf:"bytes,7,opt,name=use_info,json=useInfo,proto3" json:"use_info,omitempty" bson:"use_info,omitempty"`
 	// @inject_tag: bson:"reset_info,omitempty"
-	ResetInfo *QuotaEvent_ResetInfo `protobuf:"bytes,8,opt,name=reset_info,json=resetInfo,proto3" json:"reset_info,omitempty"`
+	ResetInfo *QuotaEvent_ResetInfo `protobuf:"bytes,8,opt,name=reset_info,json=resetInfo,proto3" json:"reset_info,omitempty" bson:"reset_info,omitempty"`
 	// @inject_tag: bson:"adjust_info,omitempty"
-	AdjustInfo *QuotaEvent_AdjustInfo `protobuf:"bytes,9,opt,name=adjust_info,json=adjustInfo,proto3" json:"adjust_info,omitempty"`
+	AdjustInfo *QuotaEvent_AdjustInfo `protobuf:"bytes,9,opt,name=adjust_info,json=adjustInfo,proto3" json:"adjust_info,omitempty" bson:"adjust_info,omitempty"`
 	// @inject_tag: bson:"set_info,omitempty"
-	SetInfo *QuotaEvent_SetInfo `protobuf:"bytes,10,opt,name=set_info,json=setInfo,proto3" json:"set_info,omitempty"`
+	SetInfo *QuotaEvent_SetInfo `protobuf:"bytes,10,opt,name=set_info,json=setInfo,proto3" json:"set_info,omitempty" bson:"set_info,omitempty"`
 	// @inject_tag: bson:"delete_info,omitempty"
-	DeleteInfo *QuotaEvent_DeleteInfo `protobuf:"bytes,11,opt,name=delete_info,json=deleteInfo,proto3" json:"delete_info,omitempty"`
+	DeleteInfo *QuotaEvent_DeleteInfo `protobuf:"bytes,11,opt,name=delete_info,json=deleteInfo,proto3" json:"delete_info,omitempty" bson:"delete_info,omitempty"`
 	// @inject_tag: bson:"created_at"
-	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty" bson:"created_at"`
 }
 
 func (x *QuotaEvent) Reset() {
@@ -1301,20 +1301,20 @@ type Quota_Unit struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"period"
-	Period Period `protobuf:"varint,1,opt,name=period,proto3,enum=quota.v1.Period" json:"period,omitempty"`
+	Period Period `protobuf:"varint,1,opt,name=period,proto3,enum=quota.v1.Period" json:"period,omitempty" bson:"period"`
 	// @inject_tag: bson:"limit_quota"
-	LimitQuota uint64 `protobuf:"varint,2,opt,name=limit_quota,json=limitQuota,proto3" json:"limit_quota,omitempty"`
+	LimitQuota uint64 `protobuf:"varint,2,opt,name=limit_quota,json=limitQuota,proto3" json:"limit_quota,omitempty" bson:"limit_quota"`
 	// @inject_tag: bson:"used_quota"
-	UsedQuota uint64 `protobuf:"varint,3,opt,name=used_quota,json=usedQuota,proto3" json:"used_quota,omitempty"`
+	UsedQuota uint64 `protobuf:"varint,3,opt,name=used_quota,json=usedQuota,proto3" json:"used_quota,omitempty" bson:"used_quota"`
 	// @inject_tag: bson:"remaining_quota"
-	RemainingQuota uint64 `protobuf:"varint,4,opt,name=remaining_quota,json=remainingQuota,proto3" json:"remaining_quota,omitempty"`
+	RemainingQuota uint64 `protobuf:"varint,4,opt,name=remaining_quota,json=remainingQuota,proto3" json:"remaining_quota,omitempty" bson:"remaining_quota"`
 	// @inject_tag: bson:"reset_quota_at"
-	ResetQuotaAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=reset_quota_at,json=resetQuotaAt,proto3" json:"reset_quota_at,omitempty"`
+	ResetQuotaAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=reset_quota_at,json=resetQuotaAt,proto3" json:"reset_quota_at,omitempty" bson:"reset_quota_at"`
 	// If set, replaces limit_quota at the next period reset (deferred change).
 	// @inject_tag: bson:"next_limit_quota"
-	NextLimitQuota uint64 `protobuf:"varint,6,opt,name=next_limit_quota,json=nextLimitQuota,proto3" json:"next_limit_quota,omitempty"`
+	NextLimitQuota uint64 `protobuf:"varint,6,opt,name=next_limit_quota,json=nextLimitQuota,proto3" json:"next_limit_quota,omitempty" bson:"next_limit_quota"`
 	// @inject_tag: bson:"expires_at,omitempty"
-	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // optional; empty = never expires
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty" bson:"expires_at,omitempty"` // optional; empty = never expires
 }
 
 func (x *Quota_Unit) Reset() {
@@ -1404,15 +1404,15 @@ type QuotaEvent_UseInfo struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"hits_addend"
-	HitsAddend uint64 `protobuf:"varint,1,opt,name=hits_addend,json=hitsAddend,proto3" json:"hits_addend,omitempty"`
+	HitsAddend uint64 `protobuf:"varint,1,opt,name=hits_addend,json=hitsAddend,proto3" json:"hits_addend,omitempty" bson:"hits_addend"`
 	// @inject_tag: bson:"approved_quota"
-	ApprovedQuota uint64 `protobuf:"varint,2,opt,name=approved_quota,json=approvedQuota,proto3" json:"approved_quota,omitempty"`
+	ApprovedQuota uint64 `protobuf:"varint,2,opt,name=approved_quota,json=approvedQuota,proto3" json:"approved_quota,omitempty" bson:"approved_quota"`
 	// @inject_tag: bson:"remaining_quota"
-	RemainingQuota uint64 `protobuf:"varint,3,opt,name=remaining_quota,json=remainingQuota,proto3" json:"remaining_quota,omitempty"`
+	RemainingQuota uint64 `protobuf:"varint,3,opt,name=remaining_quota,json=remainingQuota,proto3" json:"remaining_quota,omitempty" bson:"remaining_quota"`
 	// @inject_tag: bson:"result"
-	Result QuotaResponse_Code `protobuf:"varint,4,opt,name=result,proto3,enum=quota.v1.QuotaResponse_Code" json:"result,omitempty"`
+	Result QuotaResponse_Code `protobuf:"varint,4,opt,name=result,proto3,enum=quota.v1.QuotaResponse_Code" json:"result,omitempty" bson:"result"`
 	// @inject_tag: bson:"unit_snapshots"
-	UnitSnapshots []*Quota_Unit `protobuf:"bytes,5,rep,name=unit_snapshots,json=unitSnapshots,proto3" json:"unit_snapshots,omitempty"`
+	UnitSnapshots []*Quota_Unit `protobuf:"bytes,5,rep,name=unit_snapshots,json=unitSnapshots,proto3" json:"unit_snapshots,omitempty" bson:"unit_snapshots"`
 }
 
 func (x *QuotaEvent_UseInfo) Reset() {
@@ -1488,13 +1488,13 @@ type QuotaEvent_ResetInfo struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"trigger"
-	Trigger QuotaEvent_ResetInfo_Trigger `protobuf:"varint,1,opt,name=trigger,proto3,enum=quota.v1.QuotaEvent_ResetInfo_Trigger" json:"trigger,omitempty"`
+	Trigger QuotaEvent_ResetInfo_Trigger `protobuf:"varint,1,opt,name=trigger,proto3,enum=quota.v1.QuotaEvent_ResetInfo_Trigger" json:"trigger,omitempty" bson:"trigger"`
 	// @inject_tag: bson:"period"
-	Period Period `protobuf:"varint,2,opt,name=period,proto3,enum=quota.v1.Period" json:"period,omitempty"` // which period expired (AUTO_PERIOD only)
+	Period Period `protobuf:"varint,2,opt,name=period,proto3,enum=quota.v1.Period" json:"period,omitempty" bson:"period"` // which period expired (AUTO_PERIOD only)
 	// @inject_tag: bson:"before_unit_snapshots"
-	BeforeUnitSnapshots []*Quota_Unit `protobuf:"bytes,3,rep,name=before_unit_snapshots,json=beforeUnitSnapshots,proto3" json:"before_unit_snapshots,omitempty"`
+	BeforeUnitSnapshots []*Quota_Unit `protobuf:"bytes,3,rep,name=before_unit_snapshots,json=beforeUnitSnapshots,proto3" json:"before_unit_snapshots,omitempty" bson:"before_unit_snapshots"`
 	// @inject_tag: bson:"after_unit_snapshots"
-	AfterUnitSnapshots []*Quota_Unit `protobuf:"bytes,4,rep,name=after_unit_snapshots,json=afterUnitSnapshots,proto3" json:"after_unit_snapshots,omitempty"`
+	AfterUnitSnapshots []*Quota_Unit `protobuf:"bytes,4,rep,name=after_unit_snapshots,json=afterUnitSnapshots,proto3" json:"after_unit_snapshots,omitempty" bson:"after_unit_snapshots"`
 }
 
 func (x *QuotaEvent_ResetInfo) Reset() {
@@ -1563,17 +1563,17 @@ type QuotaEvent_AdjustInfo struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"field"
-	Field QuotaEvent_AdjustInfo_Field `protobuf:"varint,1,opt,name=field,proto3,enum=quota.v1.QuotaEvent_AdjustInfo_Field" json:"field,omitempty"`
+	Field QuotaEvent_AdjustInfo_Field `protobuf:"varint,1,opt,name=field,proto3,enum=quota.v1.QuotaEvent_AdjustInfo_Field" json:"field,omitempty" bson:"field"`
 	// @inject_tag: bson:"period"
-	Period Period `protobuf:"varint,2,opt,name=period,proto3,enum=quota.v1.Period" json:"period,omitempty"`
+	Period Period `protobuf:"varint,2,opt,name=period,proto3,enum=quota.v1.Period" json:"period,omitempty" bson:"period"`
 	// @inject_tag: bson:"delta"
-	Delta int64 `protobuf:"varint,3,opt,name=delta,proto3" json:"delta,omitempty"` // positive = increase, negative = decrease
+	Delta int64 `protobuf:"varint,3,opt,name=delta,proto3" json:"delta,omitempty" bson:"delta"` // positive = increase, negative = decrease
 	// @inject_tag: bson:"before_value"
-	BeforeValue uint64 `protobuf:"varint,4,opt,name=before_value,json=beforeValue,proto3" json:"before_value,omitempty"`
+	BeforeValue uint64 `protobuf:"varint,4,opt,name=before_value,json=beforeValue,proto3" json:"before_value,omitempty" bson:"before_value"`
 	// @inject_tag: bson:"after_value"
-	AfterValue uint64 `protobuf:"varint,5,opt,name=after_value,json=afterValue,proto3" json:"after_value,omitempty"`
+	AfterValue uint64 `protobuf:"varint,5,opt,name=after_value,json=afterValue,proto3" json:"after_value,omitempty" bson:"after_value"`
 	// @inject_tag: bson:"note"
-	Note string `protobuf:"bytes,6,opt,name=note,proto3" json:"note,omitempty"` // internal message explaining why
+	Note string `protobuf:"bytes,6,opt,name=note,proto3" json:"note,omitempty" bson:"note"` // internal message explaining why
 }
 
 func (x *QuotaEvent_AdjustInfo) Reset() {
@@ -1656,9 +1656,9 @@ type QuotaEvent_SetInfo struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"before_units"
-	BeforeUnits []*Quota_Unit `protobuf:"bytes,1,rep,name=before_units,json=beforeUnits,proto3" json:"before_units,omitempty"` // empty if quota is newly created
+	BeforeUnits []*Quota_Unit `protobuf:"bytes,1,rep,name=before_units,json=beforeUnits,proto3" json:"before_units,omitempty" bson:"before_units"` // empty if quota is newly created
 	// @inject_tag: bson:"after_units"
-	AfterUnits []*Quota_Unit `protobuf:"bytes,2,rep,name=after_units,json=afterUnits,proto3" json:"after_units,omitempty"`
+	AfterUnits []*Quota_Unit `protobuf:"bytes,2,rep,name=after_units,json=afterUnits,proto3" json:"after_units,omitempty" bson:"after_units"`
 }
 
 func (x *QuotaEvent_SetInfo) Reset() {
@@ -1713,7 +1713,7 @@ type QuotaEvent_DeleteInfo struct {
 	unknownFields protoimpl.UnknownFields
 
 	// @inject_tag: bson:"final_unit_snapshots"
-	FinalUnitSnapshots []*Quota_Unit `protobuf:"bytes,1,rep,name=final_unit_snapshots,json=finalUnitSnapshots,proto3" json:"final_unit_snapshots,omitempty"`
+	FinalUnitSnapshots []*Quota_Unit `protobuf:"bytes,1,rep,name=final_unit_snapshots,json=finalUnitSnapshots,proto3" json:"final_unit_snapshots,omitempty" bson:"final_unit_snapshots"`
 }
 
 func (x *QuotaEvent_DeleteInfo) Reset() {
@@ -2252,16 +2252,17 @@ var file_quota_v1_quota_proto_rawDesc = []byte{
 	0x75, 0x6f, 0x74, 0x61, 0x2e, 0x76, 0x31, 0x2e, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x45, 0x76, 0x65,
 	0x6e, 0x74, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e, 0x71, 0x75, 0x6f,
 	0x74, 0x61, 0x2e, 0x76, 0x31, 0x2e, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x45, 0x76, 0x65, 0x6e, 0x74,
-	0x73, 0x22, 0x00, 0x42, 0x8b, 0x01, 0x0a, 0x0c, 0x63, 0x6f, 0x6d, 0x2e, 0x71, 0x75, 0x6f, 0x74,
+	0x73, 0x22, 0x00, 0x42, 0x95, 0x01, 0x0a, 0x0c, 0x63, 0x6f, 0x6d, 0x2e, 0x71, 0x75, 0x6f, 0x74,
 	0x61, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x50, 0x72, 0x6f, 0x74, 0x6f,
-	0x50, 0x01, 0x5a, 0x2e, 0x6e, 0x77, 0x65, 0x62, 0x2e, 0x78, 0x79, 0x7a, 0x2f, 0x72, 0x65, 0x74,
-	0x61, 0x73, 0x6b, 0x2d, 0x63, 0x6c, 0x69, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2d, 0x67, 0x65,
-	0x6e, 0x2f, 0x71, 0x75, 0x6f, 0x74, 0x61, 0x2f, 0x76, 0x31, 0x3b, 0x71, 0x75, 0x6f, 0x74, 0x61,
-	0x76, 0x31, 0xa2, 0x02, 0x03, 0x51, 0x58, 0x58, 0xaa, 0x02, 0x08, 0x51, 0x75, 0x6f, 0x74, 0x61,
-	0x2e, 0x56, 0x31, 0xca, 0x02, 0x08, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x5c, 0x56, 0x31, 0xe2, 0x02,
-	0x14, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
-	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x3a, 0x3a, 0x56,
-	0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x50, 0x01, 0x5a, 0x38, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6e,
+	0x77, 0x65, 0x62, 0x78, 0x79, 0x7a, 0x2f, 0x72, 0x65, 0x74, 0x61, 0x73, 0x6b, 0x2d, 0x63, 0x6c,
+	0x69, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2d, 0x67, 0x65, 0x6e, 0x2f, 0x71, 0x75, 0x6f, 0x74,
+	0x61, 0x2f, 0x76, 0x31, 0x3b, 0x71, 0x75, 0x6f, 0x74, 0x61, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x51,
+	0x58, 0x58, 0xaa, 0x02, 0x08, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x08,
+	0x51, 0x75, 0x6f, 0x74, 0x61, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x14, 0x51, 0x75, 0x6f, 0x74, 0x61,
+	0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea,
+	0x02, 0x09, 0x51, 0x75, 0x6f, 0x74, 0x61, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x33,
 }
 
 var (
