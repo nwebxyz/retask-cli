@@ -10,6 +10,7 @@ A command-line interface for [Retask.work](https://retask.work) — manage works
 - **Shared sandbox support** — `--no-save` / `RETASK_NO_PERSIST` prints `export` lines instead of writing to disk, keeping sessions isolated per shell
 - **Multi-profile config** — manage multiple endpoints and workspaces via `~/.config/retask/config.yaml`
 - **HTTP transport** — `NWEB_API_TRANSPORT=http` switches from gRPC to Connect protocol over HTTP, enabling proxy-based auth injection in secure sandboxes
+- **Verbose logging** — `--verbose` prints the wire protocol, URL, and response status for every request to stderr
 
 ## Installation
 
@@ -81,6 +82,20 @@ retask task list
 
 The CLI still manages JWT auth normally when the variable is set — this is for environments where the proxy handles auth injection instead. Any value other than `http` (including unset) uses gRPC protocol.
 
+Use `--verbose` to confirm which wire protocol is active:
+
+```bash
+retask project list --verbose
+# [retask] > POST https://api.nweb.app/project.v1.ProjectService/GetProjects [gRPC]
+# [retask]   Authorization: Bearer [redacted]
+# [retask] < 200 OK
+
+NWEB_API_TRANSPORT=http retask project list --verbose
+# [retask] > POST https://api.nweb.app/project.v1.ProjectService/GetProjects [gRPC-Web]
+# [retask]   Authorization: Bearer [redacted]
+# [retask] < 200 OK
+```
+
 ## Authentication
 
 | Variable | Required | Description |
@@ -107,6 +122,7 @@ Available on every command:
 | `--insecure` | — | Skip TLS (local dev only) |
 | `--no-save` | `RETASK_NO_PERSIST` | Don't write to config file |
 | `--config` | — | Config file path |
+| `--verbose` | — | Print request/response info to stderr |
 
 ## Commands
 
