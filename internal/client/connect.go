@@ -66,11 +66,11 @@ func New(jwt string, insecure bool, verbose bool) *http.Client {
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 		}
 	}
-	var transport http.RoundTripper = &authTransport{jwt: jwt, base: base}
+	var inner http.RoundTripper = base
 	if verbose {
-		transport = &debugTransport{base: transport}
+		inner = &debugTransport{base: base}
 	}
-	return &http.Client{Transport: transport}
+	return &http.Client{Transport: &authTransport{jwt: jwt, base: inner}}
 }
 
 // BaseURL converts a gRPC-style endpoint to an HTTPS base URL.
