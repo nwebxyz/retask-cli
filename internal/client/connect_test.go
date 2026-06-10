@@ -34,8 +34,8 @@ func TestBaseURL(t *testing.T) {
 
 func TestOptionsHTTP(t *testing.T) {
 	opts := client.Options("http")
-	if len(opts) != 0 {
-		t.Errorf("Options(\"http\") returned %d options, want 0", len(opts))
+	if len(opts) != 1 {
+		t.Errorf("Options(\"http\") returned %d options, want 1 (gRPC-Web)", len(opts))
 	}
 }
 

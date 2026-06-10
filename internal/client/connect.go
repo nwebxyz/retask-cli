@@ -51,10 +51,10 @@ func BaseURL(endpoint string, insecure bool) string {
 }
 
 // Options returns connect.ClientOptions for the given transport string.
-// "http" → Connect protocol. Anything else (including "") → gRPC protocol.
+// "http" → gRPC-Web over HTTP/1.1 (proxy-friendly). Anything else (including "") → gRPC over HTTP/2.
 func Options(transport string) []connect.ClientOption {
 	if transport == "http" {
-		return []connect.ClientOption{}
+		return []connect.ClientOption{connect.WithGRPCWeb()}
 	}
 	return []connect.ClientOption{connect.WithGRPC()}
 }
