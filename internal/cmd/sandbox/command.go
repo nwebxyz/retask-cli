@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	connectrpc "connectrpc.com/connect"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
+	sandboxv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1/sandboxv1connect"
 )
 
 // NewCommand returns the top-level "sandbox" cobra command.
@@ -35,7 +37,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a SandboxServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (sandboxv1.SandboxServiceClient, func(), error) {
+func connect(gf *flags.Global) (sandboxv1connect.SandboxServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -50,11 +52,9 @@ func connect(gf *flags.Global) (sandboxv1.SandboxServiceClient, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return sandboxv1.NewSandboxServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return sandboxv1connect.NewSandboxServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── sandbox list ──────────────────────────────────────────────────────────────
@@ -104,13 +104,13 @@ Output fields: sandbox_id, workspace_id, name, type, status, created_at, updated
 			}
 			defer close()
 
-			resp, err := svc.GetSandboxes(context.Background(), &sandboxv1.SandboxesRequest{
+			resp, err := svc.GetSandboxes(context.Background(), connectrpc.NewRequest(&sandboxv1.SandboxesRequest{
 				Filter: filter,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Sandboxes)
+			return output.Print(gf.Pretty, resp.Msg.Sandboxes)
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "Filter by status: UNKNOWN, PROVISIONING, READY, RUNNING, STOPPED, ERROR, IDLE")
@@ -137,11 +137,11 @@ Output fields: sandbox_id, workspace_id, name, type, status, config, created_at,
 				return err
 			}
 			defer close()
-			sandbox, err := svc.GetSandbox(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetSandbox(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, sandbox)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -189,11 +189,11 @@ Output fields: sandbox_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetSandbox(context.Background(), sandbox)
+			resp, err := svc.SetSandbox(context.Background(), connectrpc.NewRequest(sandbox))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"sandbox_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"sandbox_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Sandbox name (required)")
@@ -231,18 +231,18 @@ Output fields: sandbox_id`,
 			defer close()
 
 			// SetSandbox is full-replace: fetch first, apply changes, then set.
-			existing, err := svc.GetSandbox(context.Background(), &commonv1.Id{Id: args[0]})
+			existing, err := svc.GetSandbox(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
 			if cmd.Flags().Changed("name") {
-				existing.Name = name
+				existing.Msg.Name = name
 			}
-			id, err := svc.SetSandbox(context.Background(), existing)
+			resp, err := svc.SetSandbox(context.Background(), connectrpc.NewRequest(existing.Msg))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"sandbox_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"sandbox_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New sandbox name")
@@ -268,7 +268,7 @@ Output fields: status, sandbox_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.StopSandbox(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.StopSandbox(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -296,7 +296,7 @@ Output fields: status, sandbox_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteSandbox(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteSandbox(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -366,13 +366,13 @@ Output fields: session_id, sandbox_id, workspace_id, name, status, mode, started
 			}
 			defer close()
 
-			resp, err := svc.GetSessions(context.Background(), &sandboxv1.SessionsRequest{
+			resp, err := svc.GetSessions(context.Background(), connectrpc.NewRequest(&sandboxv1.SessionsRequest{
 				Filter: filter,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Sessions)
+			return output.Print(gf.Pretty, resp.Msg.Sessions)
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Filter by sandbox ID")
@@ -399,11 +399,11 @@ Output fields: session_id, sandbox_id, workspace_id, name, status, mode, started
 				return err
 			}
 			defer close()
-			session, err := svc.GetSession(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetSession(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, session)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -442,11 +442,11 @@ Output fields: session_id`,
 			}
 			defer close()
 
-			id, err := svc.NewSession(context.Background(), req)
+			resp, err := svc.NewSession(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"session_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"session_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID (required)")
@@ -491,14 +491,14 @@ Output fields: session_id`,
 				return err
 			}
 			defer close()
-			id, err := svc.SetPartialSession(context.Background(), &commonv1.PartialData{
+			resp, err := svc.SetPartialSession(context.Background(), connectrpc.NewRequest(&commonv1.PartialData{
 				Id:   args[0],
 				Data: data,
-			})
+			}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"session_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"session_id": resp.Msg.Id})
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "New session status: ACTIVE, IDLE, TIMEOUT, STOPPED")
@@ -524,7 +524,7 @@ Output fields: status, session_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.StopSession(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.StopSession(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
@@ -552,7 +552,7 @@ Output fields: status, session_id`,
 				return err
 			}
 			defer close()
-			_, err = svc.DeleteSession(context.Background(), &commonv1.Id{Id: args[0]})
+			_, err = svc.DeleteSession(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
