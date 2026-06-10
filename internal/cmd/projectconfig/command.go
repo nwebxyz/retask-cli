@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
@@ -15,6 +16,7 @@ import (
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	retaskcommonv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/common/v1"
 	retaskprojectv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/project/v1"
+	retaskprojectv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/project/v1/projectv1connect"
 )
 
 // NewCommand returns the top-level "project-config" cobra command.
@@ -32,7 +34,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 
 // connect resolves credentials and returns a RetaskProjectServiceClient plus a
 // close function that must be deferred by the caller.
-func connect(gf *flags.Global) (retaskprojectv1.RetaskProjectServiceClient, func(), error) {
+func connect(gf *flags.Global) (retaskprojectv1connect.RetaskProjectServiceClient, func(), error) {
 	path := gf.ConfigPath
 	if path == "" {
 		path = config.DefaultConfigPath()
@@ -47,11 +49,9 @@ func connect(gf *flags.Global) (retaskprojectv1.RetaskProjectServiceClient, func
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := client.New(profile.Endpoint, jwt, gf.Insecure)
-	if err != nil {
-		return nil, nil, err
-	}
-	return retaskprojectv1.NewRetaskProjectServiceClient(conn), func() { conn.Close() }, nil
+	httpClient := client.New(jwt, gf.Insecure)
+	baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+	return retaskprojectv1connect.NewRetaskProjectServiceClient(httpClient, baseURL, client.Options(gf.Transport)...), func() {}, nil
 }
 
 // ── project-config get ────────────────────────────────────────────────────────
@@ -74,11 +74,11 @@ Output fields: project_id, task_statuses, task_types, default_task_view, kanban_
 				return err
 			}
 			defer close()
-			cfg, err := svc.GetProjectConfig(context.Background(), &commonv1.Id{Id: args[0]})
+			resp, err := svc.GetProjectConfig(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: args[0]}))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, cfg)
+			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
 }
@@ -116,7 +116,7 @@ Output fields: project_id`,
 			defer close()
 
 			// Fetch existing config to preserve unset fields.
-			existing, err := svc.GetProjectConfig(context.Background(), &commonv1.Id{Id: projectID})
+			existingResp, err := svc.GetProjectConfig(context.Background(), connectrpc.NewRequest(&commonv1.Id{Id: projectID}))
 			if err != nil {
 				return err
 			}
@@ -126,7 +126,7 @@ Output fields: project_id`,
 				if err := json.Unmarshal([]byte(taskStatusesJSON), &statuses); err != nil {
 					return fmt.Errorf("invalid --task-statuses JSON: %w", err)
 				}
-				existing.TaskStatuses = statuses
+				existingResp.Msg.TaskStatuses = statuses
 			}
 
 			if cmd.Flags().Changed("task-types") {
@@ -134,7 +134,7 @@ Output fields: project_id`,
 				if err := json.Unmarshal([]byte(taskTypesJSON), &types); err != nil {
 					return fmt.Errorf("invalid --task-types JSON: %w", err)
 				}
-				existing.TaskTypes = types
+				existingResp.Msg.TaskTypes = types
 			}
 
 			if cmd.Flags().Changed("default-view") {
@@ -142,14 +142,14 @@ Output fields: project_id`,
 				if !ok {
 					return fmt.Errorf("invalid --default-view %q. Valid values: TASK_VIEW_KANBAN, TASK_VIEW_TASKS", defaultView)
 				}
-				existing.DefaultTaskView = retaskprojectv1.ProjectConfig_TaskView(v)
+				existingResp.Msg.DefaultTaskView = retaskprojectv1.ProjectConfig_TaskView(v)
 			}
 
-			id, err := svc.SetProjectConfig(context.Background(), existing)
+			resp, err := svc.SetProjectConfig(context.Background(), connectrpc.NewRequest(existingResp.Msg))
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, map[string]string{"project_id": id.Id})
+			return output.Print(gf.Pretty, map[string]string{"project_id": resp.Msg.Id})
 		},
 	}
 
