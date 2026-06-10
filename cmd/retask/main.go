@@ -44,7 +44,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&gf.Insecure, "insecure", false, "Skip TLS verification (local dev only)")
 	root.PersistentFlags().BoolVar(&gf.NoSave, "no-save", false, "Don't write credentials to config file")
 	root.PersistentFlags().StringVar(&gf.ConfigPath, "config", "", "Config file path (default: ~/.config/retask/config.yaml)")
-	root.PersistentFlags().BoolVarP(&gf.Verbose, "verbose", "v", false, "Print request and response info to stderr")
+	root.PersistentFlags().BoolVar(&gf.Verbose, "verbose", false, "Print request and response info to stderr")
 
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if gf.Profile == "" {
