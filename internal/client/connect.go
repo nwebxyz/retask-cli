@@ -28,8 +28,22 @@ type debugTransport struct {
 	base http.RoundTripper
 }
 
+func contentTypeToProtocol(ct string) string {
+	switch {
+	case strings.HasPrefix(ct, "application/grpc-web"):
+		return "gRPC-Web"
+	case strings.HasPrefix(ct, "application/grpc"):
+		return "gRPC"
+	case strings.HasPrefix(ct, "application/connect"):
+		return "Connect"
+	default:
+		return "HTTP"
+	}
+}
+
 func (t *debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	fmt.Fprintf(os.Stderr, "[retask] > %s %s\n", req.Method, req.URL)
+	protocol := contentTypeToProtocol(req.Header.Get("Content-Type"))
+	fmt.Fprintf(os.Stderr, "[retask] > %s %s [%s]\n", req.Method, req.URL, protocol)
 	if req.Header.Get("Authorization") != "" {
 		fmt.Fprintf(os.Stderr, "[retask]   Authorization: Bearer [redacted]\n")
 	}
