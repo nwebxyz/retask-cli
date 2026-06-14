@@ -27,7 +27,8 @@ import (
 )
 
 func newConnectCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var mode string
+	cmd := &cobra.Command{
 		Use:   "connect <id>",
 		Short: "Connect this machine as a Private VM sandbox",
 		Long: `Connect this machine as the execution backend for a Private VM sandbox.
@@ -37,11 +38,18 @@ to sandbox-proxy and manages sessions as local PTY processes.
 
 Usage example:
   retask sandbox connect sandbox_abc123
+  retask sandbox connect sandbox_abc123 --mode headless
+
+Flags:
+  --mode string  Running mode: auto, tui, headless (default: auto)
 
 Environment:
   SANDBOX_PROXY_ENDPOINT  Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if mode != "auto" && mode != "tui" && mode != "headless" {
+				return fmt.Errorf("invalid --mode %q: must be auto, tui, or headless", mode)
+			}
 			sandboxID := args[0]
 
 			// Resolve credentials.
@@ -91,9 +99,11 @@ Environment:
 			fleetCfg.TUI.Title = makeTitleFunc(&rawConnState, sandboxLabel)
 			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
 
+			useTUI := mode == "tui" || (mode == "auto" && term.IsTerminal(int(os.Stdout.Fd())))
+
 			// Logger: non-nil only in headless mode.
 			var logger *slog.Logger
-			if !term.IsTerminal(int(os.Stdout.Fd())) {
+			if !useTUI {
 				logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 			}
 
@@ -102,7 +112,7 @@ Environment:
 
 			go dl.Run(ctx)
 
-			if term.IsTerminal(int(os.Stdout.Fd())) {
+			if useTUI {
 				if err := tui.Run(ctx, fleet, fleetCfg.TUI, nil); err != nil {
 					return err
 				}
@@ -114,6 +124,8 @@ Environment:
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&mode, "mode", "auto", "Running mode: auto, tui, headless")
+	return cmd
 }
 
 // proxyWSBase returns the WebSocket base URL for sandbox-proxy.
