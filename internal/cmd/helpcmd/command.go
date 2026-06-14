@@ -120,6 +120,7 @@ func buildManifest() manifest {
 			{Command: "retask sandbox session update", Description: "Partial update a session", Flags: []string{"--status"}, Example: "retask sandbox session update <id> --status SESSION_STATUS_IDLE"},
 			{Command: "retask sandbox session stop", Description: "Stop a session", Example: "retask sandbox session stop <session-id>"},
 			{Command: "retask sandbox session delete", Description: "Delete a session", Example: "retask sandbox session delete <session-id>"},
+			{Command: "retask sandbox connect", Description: "Connect this machine as a Private VM sandbox (long-running)", Example: "retask sandbox connect <sandbox-id>"},
 			{Command: "retask agent list", Description: "List agents", Flags: []string{"--role"}, Example: "retask agent list --role ROLE_TASK_PROCESSOR"},
 			{Command: "retask agent get", Description: "Get an agent by ID", Example: "retask agent get <agent-id>"},
 			{Command: "retask agent create", Description: "Create an agent", Flags: []string{"--name", "--role", "--description", "--sandbox-template-id"}, Example: "retask agent create --name 'Task Bot' --role ROLE_TASK_PROCESSOR"},
