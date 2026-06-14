@@ -6,21 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
+	"os"
 	"sync"
 
-	connectrpc "connectrpc.com/connect"
 	"github.com/coder/websocket"
 	agentfleet "github.com/hoaitan/agentfleet"
-	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
-	sandboxv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1/sandboxv1connect"
 )
 
 // SessionManager creates and tracks one agentfleet Runner per active sandbox session.
 type SessionManager struct {
 	sandboxID string
 	wsBase    string
-	svc       sandboxv1connect.SandboxServiceClient
 	fleet     *agentfleet.Fleet
 	fleetCfg  agentfleet.FleetConfig
 	agentCfg  agentfleet.AgentConfig
@@ -32,7 +28,6 @@ type SessionManager struct {
 
 func newSessionManager(
 	sandboxID, wsBase string,
-	svc sandboxv1connect.SandboxServiceClient,
 	fleet *agentfleet.Fleet,
 	fleetCfg agentfleet.FleetConfig,
 	agentCfg agentfleet.AgentConfig,
@@ -41,7 +36,6 @@ func newSessionManager(
 	return &SessionManager{
 		sandboxID: sandboxID,
 		wsBase:    wsBase,
-		svc:       svc,
 		fleet:     fleet,
 		fleetCfg:  fleetCfg,
 		agentCfg:  agentCfg,
@@ -50,39 +44,27 @@ func newSessionManager(
 	}
 }
 
-// Start handles a new_session event: fetches runtime, launches PTY, connects session lane.
-func (sm *SessionManager) Start(ctx context.Context, sessionID, token string) {
-	resp, err := sm.svc.GetSessionRuntime(ctx, connectrpc.NewRequest(&commonv1.Id{Id: sessionID}))
-	if err != nil {
-		sm.logError("session_runtime_error", "session_id", sessionID, "error", err)
-		return
-	}
-	rt := resp.Msg
-
-	initCommand := rt.Sandbox.GetConfig().GetSessionInitCommand()
+// Start handles a new_session event: launches PTY and connects session lane.
+// initCommand and env come from the data lane new_session message.
+func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name, initCommand string, env map[string]string) {
 	if initCommand == "" {
 		sm.logError("session_no_init_command", "session_id", sessionID)
 		return
 	}
-
-	var envSlice []string
-	for _, ev := range rt.Sandbox.GetConfig().GetEnvVars() {
-		if s := ev.GetSecret(); s != nil && s.GetValue() != "" {
-			envSlice = append(envSlice, ev.GetKey()+"="+s.GetValue())
-		} else if p := ev.GetPlain(); p != "" {
-			envSlice = append(envSlice, ev.GetKey()+"="+p)
-		}
-	}
-
-	name := rt.Session.GetName()
 	if name == "" {
 		name = sessionID
+	}
+
+	var envSlice []string
+	for k, v := range env {
+		envSlice = append(envSlice, k+"="+v)
 	}
 
 	agCfg := sm.agentCfg
 	agCfg.Env = envSlice
 
-	ag := agentfleet.NewPtyAgent(strings.Fields(initCommand), agCfg)
+	sm.logInfo("session_starting", "session_id", sessionID, "name", name, "init_command", initCommand)
+	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", initCommand}, agCfg)
 	task := &agentfleet.BasicTask{TaskID: sessionID, TaskName: name, Cmd: initCommand}
 	r := agentfleet.NewRunner(task, ag, sm.fleetCfg, agCfg)
 	r.Start()
@@ -100,6 +82,8 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token string) {
 		r.Stop() //nolint:errcheck
 		return
 	}
+	fmt.Fprintf(os.Stderr, "session lane: %s/ws/session-lane?sandbox_id=%s&session_id=%s\n",
+		sm.wsBase, sm.sandboxID, sessionID)
 
 	sm.mu.Lock()
 	sm.sessions[sessionID] = r
@@ -107,7 +91,8 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token string) {
 
 	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 	go func() {
-		sm.readLoop(ctx, wsConn, r)
+		err := sm.readLoop(ctx, wsConn, r)
+		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
 		r.Stop() //nolint:errcheck  // ensure PTY exits when WS disconnects
 	}()
 
@@ -121,11 +106,11 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token string) {
 	}()
 }
 
-func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner) {
+func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner) error {
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
-			return
+			return err
 		}
 		var msg struct {
 			Type string `json:"type"`

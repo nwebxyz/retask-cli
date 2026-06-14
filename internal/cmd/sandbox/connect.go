@@ -95,7 +95,6 @@ Environment:
 
 			// agentfleet config.
 			fleetCfg := agentfleet.DefaultConfig()
-			fleetCfg.Fleet.SocketDir = "" // no Unix socket server
 			fleetCfg.TUI.Title = makeTitleFunc(&rawConnState, sandboxLabel)
 			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
 
@@ -107,13 +106,17 @@ Environment:
 				logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 			}
 
-			sm := newSessionManager(sandboxID, wsBase, svc, fleet, fleetCfg.Fleet, fleetCfg.Agent, logger)
+			sm := newSessionManager(sandboxID, wsBase, fleet, fleetCfg.Fleet, fleetCfg.Agent, logger)
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
 			go dl.Run(ctx)
 
 			if useTUI {
-				if err := tui.Run(ctx, fleet, fleetCfg.TUI, nil); err != nil {
+				execPath, _ := os.Executable()
+				onAttach := func(taskID string) {
+					tui.OpenInTerminal(execPath, "sandbox", "attach", taskID)
+				}
+				if err := tui.Run(ctx, fleet, fleetCfg.TUI, onAttach); err != nil {
 					return err
 				}
 			} else {

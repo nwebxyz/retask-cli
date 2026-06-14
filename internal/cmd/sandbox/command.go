@@ -32,6 +32,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 		newDeleteCommand(gf),
 		newSessionCommand(gf),
 		newConnectCommand(gf),
+		newAttachCommand(gf),
 	)
 	return cmd
 }

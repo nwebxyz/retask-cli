@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -20,10 +21,17 @@ const (
 
 var errSandboxDeleted = errors.New("sandbox deleted")
 
+type dataLaneMsgNewSession struct {
+	Name        string            `json:"name,omitempty"`
+	InitCommand string            `json:"init_command,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+}
+
 type dataLaneMsg struct {
-	Type      string `json:"type"`
-	SessionID string `json:"session_id,omitempty"`
-	Token     string `json:"token,omitempty"`
+	Type       string                   `json:"type"`
+	SessionID  string                   `json:"session_id,omitempty"`
+	Token      string                   `json:"token,omitempty"`
+	NewSession *dataLaneMsgNewSession   `json:"new_session,omitempty"`
 }
 
 // DataLane manages the persistent reverse WebSocket to sandbox-proxy.
@@ -58,7 +66,7 @@ func (dl *DataLane) Run(ctx context.Context) {
 			return
 		}
 		atomic.StoreInt32(dl.connState, connStateError)
-		dl.logWarn("disconnected", "retrying_in", backoff.String())
+		dl.logWarn("disconnected", "error", err, "retrying_in", backoff.String())
 		select {
 		case <-ctx.Done():
 			return
@@ -80,6 +88,7 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 	defer conn.CloseNow() //nolint:errcheck
 
 	atomic.StoreInt32(dl.connState, connStateConnected)
+	fmt.Fprintf(os.Stderr, "data lane: %s/ws/data-lane?sandbox_id=%s\n", dl.wsBase, dl.sandboxID)
 	dl.logInfo("connected", "sandbox_id", dl.sandboxID)
 
 	for {
@@ -100,7 +109,11 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 
 		case "new_session":
 			dl.logInfo("new_session", "session_id", msg.SessionID)
-			go dl.sessions.Start(ctx, msg.SessionID, msg.Token)
+			if msg.NewSession == nil {
+				dl.logWarn("new_session_missing_payload", "session_id", msg.SessionID)
+				continue
+			}
+			go dl.sessions.Start(ctx, msg.SessionID, msg.Token, msg.NewSession.Name, msg.NewSession.InitCommand, msg.NewSession.Env)
 
 		case "stop_session":
 			dl.logInfo("stop_session", "session_id", msg.SessionID)
