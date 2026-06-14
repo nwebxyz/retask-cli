@@ -1,11 +1,29 @@
 package sandbox
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"sync/atomic"
+	"syscall"
 
+	connectrpc "connectrpc.com/connect"
+	"github.com/charmbracelet/lipgloss"
+	agentfleet "github.com/hoaitan/agentfleet"
+	"github.com/hoaitan/agentfleet/tui"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/nwebxyz/retask-cli/internal/auth"
+	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/config"
 	"github.com/nwebxyz/retask-cli/internal/flags"
+	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
+	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
+	sandboxv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1/sandboxv1connect"
 )
 
 func newConnectCommand(gf *flags.Global) *cobra.Command {
@@ -24,14 +42,81 @@ Environment:
   SANDBOX_PROXY_ENDPOINT  Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Full implementation added in Task 8.
+			sandboxID := args[0]
+
+			// Resolve credentials.
+			path := gf.ConfigPath
+			if path == "" {
+				path = config.DefaultConfigPath()
+			}
+			cfg, err := config.Load(path)
+			if err != nil {
+				return err
+			}
+			profile := cfg.ActiveProfileData(gf.Profile)
+			resolver := auth.NewResolver(profile, gf.Profile, gf.WorkspaceID, path, gf.NoSave, gf.Insecure)
+
+			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer stop()
+
+			jwt, err := resolver.Token(ctx)
+			if err != nil {
+				return err
+			}
+
+			// Build sandbox service client.
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+			svc := sandboxv1connect.NewSandboxServiceClient(httpClient, baseURL, client.Options(gf.Transport)...)
+
+			// Validate sandbox type.
+			sbResp, err := svc.GetSandbox(ctx, connectrpc.NewRequest(&commonv1.Id{Id: sandboxID}))
+			if err != nil {
+				return err
+			}
+			if sbResp.Msg.Type != sandboxv1.Sandbox_TYPE_PRIVATE {
+				return fmt.Errorf("sandbox %q must be type PRIVATE (got %s)", sandboxID, sbResp.Msg.Type)
+			}
+
+			wsBase := proxyWSBase()
+			sandboxLabel := fmt.Sprintf("%s (%s)", sbResp.Msg.Name, sbResp.Msg.SandboxId)
+
+			// Connection state: 0=connecting, 1=connected, 2=error.
+			var rawConnState int32
+			atomic.StoreInt32(&rawConnState, connStateConnecting)
+
+			// agentfleet config.
+			fleetCfg := agentfleet.DefaultConfig()
+			fleetCfg.Fleet.SocketDir = "" // no Unix socket server
+			fleetCfg.TUI.Title = makeTitleFunc(&rawConnState, sandboxLabel)
+			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
+
+			// Logger: non-nil only in headless mode.
+			var logger *slog.Logger
+			if !term.IsTerminal(int(os.Stdout.Fd())) {
+				logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+			}
+
+			sm := newSessionManager(sandboxID, wsBase, svc, fleet, fleetCfg.Fleet, fleetCfg.Agent, logger)
+			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
+
+			go dl.Run(ctx)
+
+			if term.IsTerminal(int(os.Stdout.Fd())) {
+				if err := tui.Run(ctx, fleet, fleetCfg.TUI, nil); err != nil {
+					return err
+				}
+			} else {
+				<-ctx.Done()
+			}
+
+			sm.StopAll()
 			return nil
 		},
 	}
 }
 
-// proxyWSBase returns the WebSocket base URL for sandbox-proxy,
-// converting https→wss and http→ws.
+// proxyWSBase returns the WebSocket base URL for sandbox-proxy.
 func proxyWSBase() string {
 	ep := os.Getenv("SANDBOX_PROXY_ENDPOINT")
 	if ep == "" {
@@ -41,4 +126,21 @@ func proxyWSBase() string {
 	ep = strings.Replace(ep, "https://", "wss://", 1)
 	ep = strings.Replace(ep, "http://", "ws://", 1)
 	return ep
+}
+
+// makeTitleFunc returns a TUIConfig.Title func that reflects live connection state.
+func makeTitleFunc(connState *int32, sandboxLabel string) func() string {
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+	gray := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	return func() string {
+		switch atomic.LoadInt32(connState) {
+		case connStateConnected:
+			return green.Render("●") + " connected  " + sandboxLabel
+		case connStateError:
+			return red.Render("●") + " error  " + sandboxLabel
+		default:
+			return gray.Render("○") + " connecting  " + sandboxLabel
+		}
+	}
 }
