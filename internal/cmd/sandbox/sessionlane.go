@@ -92,10 +92,6 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token string) {
 		return
 	}
 
-	sm.mu.Lock()
-	sm.sessions[sessionID] = r
-	sm.mu.Unlock()
-
 	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
 		sm.wsBase, sm.sandboxID, sessionID, token)
 	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
@@ -105,8 +101,15 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token string) {
 		return
 	}
 
+	sm.mu.Lock()
+	sm.sessions[sessionID] = r
+	sm.mu.Unlock()
+
 	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
-	go sm.readLoop(ctx, wsConn, r)
+	go func() {
+		sm.readLoop(ctx, wsConn, r)
+		r.Stop() //nolint:errcheck  // ensure PTY exits when WS disconnects
+	}()
 
 	go func() {
 		<-r.Done()
