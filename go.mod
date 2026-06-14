@@ -11,11 +11,16 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/coder/websocket v1.8.14 // indirect
+require (
+	github.com/coder/websocket v1.8.14 // indirect
+	github.com/creack/pty v1.1.24 // indirect
+	github.com/hoaitan/agentfleet v0.2.1 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/hoaitan/agentfleet v0.2.0
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
