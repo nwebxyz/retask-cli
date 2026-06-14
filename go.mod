@@ -13,6 +13,13 @@ require (
 )
 
 require (
+	github.com/creack/pty v1.1.24 // indirect
+	github.com/hoaitan/agentfleet v0.3.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+)
+
+require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
