@@ -88,7 +88,6 @@ Environment:
 			}
 
 			wsBase := proxyWSBase()
-			sandboxLabel := fmt.Sprintf("%s (%s)", sbResp.Msg.Name, sbResp.Msg.SandboxId)
 
 			// Connection state: 0=connecting, 1=connected, 2=error.
 			var rawConnState int32
@@ -109,7 +108,8 @@ Environment:
 
 			// agentfleet config.
 			fleetCfg := agentfleet.DefaultConfig()
-			fleetCfg.TUI.Title = makeTitleFunc(&rawConnState, sandboxLabel)
+			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
+			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
 			if useTUI {
 				fleetCfg.TUI.Log = logBuf
 			}
@@ -152,19 +152,27 @@ func proxyWSBase() string {
 	return ep
 }
 
-// makeTitleFunc returns a TUIConfig.Title func that reflects live connection state.
-func makeTitleFunc(connState *int32, sandboxLabel string) func() string {
+// makeTitleFunc returns the static left-side header: logo + sandbox name + dim ID.
+func makeTitleFunc(name, id string) func() string {
+	logo := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc")).Render("◈ retask")
+	dimID := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render(id)
+	label := name + "  " + dimID
+	return func() string { return logo + "  " + label }
+}
+
+// makeConnStatusFunc returns the right-side connection status indicator.
+func makeConnStatusFunc(connState *int32) func() string {
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
 	gray := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
 	return func() string {
 		switch atomic.LoadInt32(connState) {
 		case connStateConnected:
-			return green.Render("●") + " connected  " + sandboxLabel
+			return green.Render("● connected")
 		case connStateError:
-			return red.Render("●") + " error  " + sandboxLabel
+			return red.Render("● error")
 		default:
-			return gray.Render("○") + " connecting  " + sandboxLabel
+			return gray.Render("○ connecting")
 		}
 	}
 }
