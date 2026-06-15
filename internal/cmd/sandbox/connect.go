@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -93,18 +94,26 @@ Environment:
 			var rawConnState int32
 			atomic.StoreInt32(&rawConnState, connStateConnecting)
 
+			useTUI := mode == "tui" || (mode == "auto" && term.IsTerminal(int(os.Stdout.Fd())))
+
+			// LogBuffer captures all events; in TUI mode it feeds the log panel,
+			// in headless mode it drains to stderr so output is identical.
+			logBuf := agentfleet.NewLogBuffer(500)
+			var logOut io.Writer = os.Stderr
+			if useTUI {
+				logOut = logBuf
+			}
+			logger := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{
+				Level: slog.LevelInfo,
+			}))
+
 			// agentfleet config.
 			fleetCfg := agentfleet.DefaultConfig()
 			fleetCfg.TUI.Title = makeTitleFunc(&rawConnState, sandboxLabel)
-			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
-
-			useTUI := mode == "tui" || (mode == "auto" && term.IsTerminal(int(os.Stdout.Fd())))
-
-			// Logger: non-nil only in headless mode.
-			var logger *slog.Logger
-			if !useTUI {
-				logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+			if useTUI {
+				fleetCfg.TUI.Log = logBuf
 			}
+			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
 
 			sm := newSessionManager(sandboxID, wsBase, fleet, fleetCfg.Fleet, fleetCfg.Agent, logger)
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)

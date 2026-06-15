@@ -26,12 +26,8 @@ github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
-github.com/hoaitan/agentfleet v0.3.0 h1:A5NlpGt7VUTpZyGcbJe46i9TWCUulEoyPqpnnAwimUs=
-github.com/hoaitan/agentfleet v0.3.0/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
-github.com/hoaitan/agentfleet v0.4.0 h1:AjO7ti1PQWQe1IQ5w6MHWLfUYzD2sKWAKP0g0K32S7Q=
-github.com/hoaitan/agentfleet v0.4.0/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
-github.com/hoaitan/agentfleet v0.5.0 h1:SN7gGLe0AbINsc2WwjXMt8EfcUVXV8Tu9xBjqsSADJ0=
-github.com/hoaitan/agentfleet v0.5.0/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
+github.com/hoaitan/agentfleet v0.6.0 h1:mKqLACi71ABtiQZ6EZ0V0dcf7XTmR5R+IocEk25tsBA=
+github.com/hoaitan/agentfleet v0.6.0/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
 github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf h1:WfD7VjIE6z8dIvMsI4/s+1qr5EL+zoIGev1BQj1eoJ8=
 github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf/go.mod h1:hyb9oH7vZsitZCiBt0ZvifOrB+qc8PS5IiilCIb87rg=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
@@ -76,6 +72,8 @@ github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e h1:JVG44RsyaB9T2KIHavMF/ppJZNG9ZpyihvCd0w101no=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e/go.mod h1:RbqR21r5mrJuqunuUZ/Dhy/avygyECGrLceyNeo4LiM=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
+golang.org/x/exp v0.0.0-20220909182711-5c715a9e8561 h1:MDc5xs78ZrZr3HMQugiXOAkSZtfTpbJLDr/lwfgO53E=
+golang.org/x/exp v0.0.0-20220909182711-5c715a9e8561/go.mod h1:cyybsKvd6eL0RnXn6p/Grxp8F5bW7iYuBgsNCOHpMYE=
 golang.org/x/sys v0.0.0-20210809222454-d867a43fc93e/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.45.0 h1:dO4czNzziLiiXplLQgBCEpCvXQ3dnkn0SdaZSYdQ+FY=
