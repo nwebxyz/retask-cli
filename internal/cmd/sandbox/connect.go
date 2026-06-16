@@ -166,7 +166,7 @@ func proxyWSBase() string {
 
 // makeTitleFunc returns the static left-side header: logo + sandbox name + dim full ID.
 func makeTitleFunc(name, id string) func() string {
-	logo := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc")).Render("◈ retask")
+	logo := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc")).Render("🔀 retask")
 	dimID := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render(id)
 	label := name + "  " + dimID
 	return func() string { return logo + "  " + label }
