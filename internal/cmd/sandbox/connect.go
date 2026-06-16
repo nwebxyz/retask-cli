@@ -29,6 +29,7 @@ import (
 
 func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
+	var autoOpen bool
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
 		Short: "Connect this machine as a Private VM sandbox",
@@ -40,12 +41,15 @@ to sandbox-proxy and manages sessions as local PTY processes.
 Usage example:
   retask sandbox connect sandbox_abc123
   retask sandbox connect sandbox_abc123 --mode headless
+  retask sandbox connect sandbox_abc123 --auto-open
 
 Flags:
   --mode string  Running mode: auto, tui, headless (default: auto)
+  --auto-open    Auto-open a terminal tab for each new session (default: false)
 
 Environment:
-  SANDBOX_PROXY_ENDPOINT  Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)`,
+  SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
+  RETASK_AUTO_OPEN=1       Enable auto-open without the flag`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
@@ -110,6 +114,7 @@ Environment:
 			fleetCfg := agentfleet.DefaultConfig()
 			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
 			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
+			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_AUTO_OPEN") == "1"
 			if useTUI {
 				fleetCfg.TUI.Log = logBuf
 			}
@@ -142,6 +147,7 @@ Environment:
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Running mode: auto, tui, headless")
+	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
 	return cmd
 }
 
