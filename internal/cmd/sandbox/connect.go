@@ -126,6 +126,7 @@ Environment:
 					tui.OpenInTerminal(execPath, "sandbox", "attach", taskID)
 				}
 				fleetCfg.TUI.OnClose = func(taskID string) {
+					sm.Stop(taskID) // terminate local PTY immediately
 					dl.Send(dataLaneMsg{Type: "terminate_session", SessionID: taskID})
 				}
 				if err := tui.Run(ctx, fleet, fleetCfg.TUI, onAttach); err != nil {
