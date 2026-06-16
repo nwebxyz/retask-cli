@@ -152,16 +152,10 @@ func proxyWSBase() string {
 	return ep
 }
 
-// makeTitleFunc returns the static left-side header: logo + sandbox name + dim short-ID.
-// The ID is abbreviated to 8 chars (matching the card view) to keep the header short
-// enough that it never wraps — a wrapped header corrupts Bubbletea's line tracking.
+// makeTitleFunc returns the static left-side header: logo + sandbox name + dim full ID.
 func makeTitleFunc(name, id string) func() string {
 	logo := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc")).Render("◈ retask")
-	shortID := id
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	dimID := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render(shortID)
+	dimID := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render(id)
 	label := name + "  " + dimID
 	return func() string { return logo + "  " + label }
 }
