@@ -38,6 +38,8 @@ github.com/hoaitan/agentfleet v0.6.16 h1:CPURHD+8GUmp2dMV3XsyRIsJ9SwJYoznoNbNM77
 github.com/hoaitan/agentfleet v0.6.16/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
 github.com/hoaitan/agentfleet v0.6.17 h1:nvC9J0Ej9Q86OSj937j8kxgZvYPPgQ6YVW17MDIJ07o=
 github.com/hoaitan/agentfleet v0.6.17/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
+github.com/hoaitan/agentfleet v0.6.18 h1:Qmv6lEK1LoBkOB/NyM8DVdVGoZFyfWSzT4X/9lQszqU=
+github.com/hoaitan/agentfleet v0.6.18/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
 github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf h1:WfD7VjIE6z8dIvMsI4/s+1qr5EL+zoIGev1BQj1eoJ8=
 github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf/go.mod h1:hyb9oH7vZsitZCiBt0ZvifOrB+qc8PS5IiilCIb87rg=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

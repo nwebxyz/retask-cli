@@ -115,6 +115,7 @@ Environment:
 			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
 			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
 			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_SANDBOX_AUTO_OPEN_SESSION") == "1"
+			fleetCfg.TUI.FilterLines = filterLines
 			if useTUI {
 				fleetCfg.TUI.Log = logBuf
 			}
