@@ -49,7 +49,7 @@ Flags:
 
 Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
-  RETASK_AUTO_OPEN=1       Enable auto-open without the flag`,
+  RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
@@ -114,7 +114,7 @@ Environment:
 			fleetCfg := agentfleet.DefaultConfig()
 			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
 			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
-			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_AUTO_OPEN") == "1"
+			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_SANDBOX_AUTO_OPEN_SESSION") == "1"
 			if useTUI {
 				fleetCfg.TUI.Log = logBuf
 			}
