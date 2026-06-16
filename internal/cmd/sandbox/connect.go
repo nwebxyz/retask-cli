@@ -125,9 +125,13 @@ Environment:
 				onAttach := func(taskID string) {
 					tui.OpenInTerminal(execPath, "sandbox", "attach", taskID)
 				}
+				fleetCfg.TUI.OnClose = func(taskID string) {
+					dl.Send(dataLaneMsg{Type: "terminate_session", SessionID: taskID})
+				}
 				if err := tui.Run(ctx, fleet, fleetCfg.TUI, onAttach); err != nil {
 					return err
 				}
+				stop() // disconnect data lane when TUI exits
 			} else {
 				<-ctx.Done()
 			}

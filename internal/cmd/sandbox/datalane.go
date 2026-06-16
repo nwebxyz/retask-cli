@@ -41,8 +41,9 @@ type DataLane struct {
 	wsBase    string
 	jwt       string
 	sessions  *SessionManager
-	connState *int32  // atomic
+	connState *int32       // atomic
 	log       *slog.Logger // nil in TUI mode
+	sendCh    chan dataLaneMsg
 }
 
 func newDataLane(sandboxID, wsBase, jwt string, sessions *SessionManager, connState *int32, log *slog.Logger) *DataLane {
@@ -53,6 +54,16 @@ func newDataLane(sandboxID, wsBase, jwt string, sessions *SessionManager, connSt
 		sessions:  sessions,
 		connState: connState,
 		log:       log,
+		sendCh:    make(chan dataLaneMsg, 8),
+	}
+}
+
+// Send queues a message to be written to the active data lane connection.
+// Drops silently if the buffer is full or no connection is active.
+func (dl *DataLane) Send(msg dataLaneMsg) {
+	select {
+	case dl.sendCh <- msg:
+	default:
 	}
 }
 
@@ -90,6 +101,22 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 	atomic.StoreInt32(dl.connState, connStateConnected)
 	fmt.Fprintf(os.Stderr, "data lane: %s/ws/data-lane?sandbox_id=%s\n", dl.wsBase, dl.sandboxID)
 	dl.logInfo("connected", "sandbox_id", dl.sandboxID)
+
+	// Writer goroutine: drains sendCh and writes to conn.
+	// Uses a local cancel so it exits when this connection closes.
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+	go func() {
+		for {
+			select {
+			case msg := <-dl.sendCh:
+				raw, _ := json.Marshal(msg)
+				conn.Write(connCtx, websocket.MessageText, raw) //nolint:errcheck
+			case <-connCtx.Done():
+				return
+			}
+		}
+	}()
 
 	for {
 		_, raw, err := conn.Read(ctx)
