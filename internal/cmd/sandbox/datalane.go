@@ -146,6 +146,10 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 			dl.logInfo("stop_session", "session_id", msg.SessionID)
 			dl.sessions.Stop(msg.SessionID)
 
+		case "delete_session":
+			dl.logInfo("delete_session", "session_id", msg.SessionID)
+			dl.sessions.Remove(msg.SessionID)
+
 		case "stop_sandbox":
 			dl.logInfo("stop_sandbox")
 			dl.sessions.StopAll()

@@ -144,6 +144,19 @@ func (sm *SessionManager) Stop(sessionID string) {
 	}
 }
 
+// Remove stops the session's PTY and removes it from the fleet so it
+// disappears from the TUI immediately. Used for delete_session messages.
+func (sm *SessionManager) Remove(sessionID string) {
+	sm.mu.Lock()
+	r := sm.sessions[sessionID]
+	delete(sm.sessions, sessionID)
+	sm.mu.Unlock()
+	if r != nil {
+		r.Stop() //nolint:errcheck
+		sm.fleet.Remove(sessionID)
+	}
+}
+
 // StopAll stops every active session.
 func (sm *SessionManager) StopAll() {
 	sm.mu.Lock()
