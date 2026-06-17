@@ -26,6 +26,8 @@ github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
+github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02 h1:AgcIVYPa6XJnU3phs104wLj8l5GEththEw6+F79YsIY=
+github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02/go.mod h1:Q48J4R4DvxnHolD5P8pOtXigYlRuPLGl6moFx3ulM68=
 github.com/hoaitan/agentfleet v0.6.12 h1:VwCFha1Nj3gjhUd/QN8wevh0nvFxLAcxUm3Ef97Ldgg=
 github.com/hoaitan/agentfleet v0.6.12/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
 github.com/hoaitan/agentfleet v0.6.13 h1:a2Uy2kTsgvz5gnatgxCb+gaAfWCWzqOIj29KvczF3b0=
@@ -46,6 +48,8 @@ github.com/hoaitan/agentfleet v0.6.21 h1:beNrpkA/nul82ZcldNxxgh2pvp5seG2U+S0R6zX
 github.com/hoaitan/agentfleet v0.6.21/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
 github.com/hoaitan/agentfleet v0.6.22 h1:s4MWcBVziswuCmuH2QDaRWQn69yfFMnlVctIxXST3JU=
 github.com/hoaitan/agentfleet v0.6.22/go.mod h1:YDK9Mx6gMpL/WmUnfoY64Lb+WGNHV7lnaTvOgBcQxGg=
+github.com/hoaitan/agentfleet v0.6.23 h1:Hg8Qo6rxEmejm6rcHXHfTJBb0Fz78cWeV+EAybJ3qcY=
+github.com/hoaitan/agentfleet v0.6.23/go.mod h1:nYrGTu9Xzn4fwzlYA9Na8g2PuBKBgYov5uy0mj1J1uM=
 github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf h1:WfD7VjIE6z8dIvMsI4/s+1qr5EL+zoIGev1BQj1eoJ8=
 github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf/go.mod h1:hyb9oH7vZsitZCiBt0ZvifOrB+qc8PS5IiilCIb87rg=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

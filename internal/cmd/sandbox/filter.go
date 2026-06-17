@@ -7,90 +7,11 @@ import (
 )
 
 // filterLines is the FilterLines callback registered with agentfleet TUI.
-// It trims the agent shell's input UI block from the tail of PTY output,
-// removes chrome lines, then joins fragmented streaming lines into coherent text.
+// Lines() now returns VTE-rendered output (control sequences already applied),
+// so we only need to trim the agent shell's input UI block and remove chrome.
 func filterLines(lines []string) []string {
 	lines = trimInputFooter(lines)
-	lines = tuipkg.FilterAgentChrome(lines)
-	return joinFragmentedLines(lines)
-}
-
-// joinFragmentedLines merges consecutive non-blank, non-structural lines that
-// arrived as multiple short fragments due to token-by-token streaming. A line
-// is a "fragment candidate" if it doesn't start with a list/code marker and
-// isn't blank. Adjacent fragment candidates are joined with a single space.
-// Blank lines and structural lines (bullets, numbered lists, code fences) are
-// always emitted as-is and break the current join group.
-func joinFragmentedLines(lines []string) []string {
-	if len(lines) == 0 {
-		return lines
-	}
-	out := make([]string, 0, len(lines))
-	acc := ""
-
-	flush := func() {
-		if acc != "" {
-			out = append(out, acc)
-			acc = ""
-		}
-	}
-
-	for _, l := range lines {
-		stripped := strings.TrimSpace(tuipkg.StripANSI(l))
-
-		// Blank lines end the current group and pass through.
-		if stripped == "" {
-			flush()
-			out = append(out, l)
-			continue
-		}
-
-		// Structural lines (bullets, numbered lists, code fences, headings)
-		// end the current group and pass through unchanged.
-		if isStructuralLine(stripped) {
-			flush()
-			out = append(out, l)
-			continue
-		}
-
-		// Ordinary text: append to accumulator.
-		if acc == "" {
-			acc = strings.TrimSpace(l)
-		} else {
-			acc += " " + strings.TrimSpace(l)
-		}
-	}
-	flush()
-	return out
-}
-
-func isStructuralLine(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	// Markdown headings
-	if s[0] == '#' {
-		return true
-	}
-	// Code fences
-	if strings.HasPrefix(s, "```") || strings.HasPrefix(s, "~~~") {
-		return true
-	}
-	// Unordered list bullets (-, *, +)
-	if len(s) >= 2 && (s[0] == '-' || s[0] == '*' || s[0] == '+') && s[1] == ' ' {
-		return true
-	}
-	// Numbered list: "1. " pattern
-	for i, c := range s {
-		if c >= '0' && c <= '9' {
-			continue
-		}
-		if c == '.' && i > 0 && i+1 < len(s) && s[i+1] == ' ' {
-			return true
-		}
-		break
-	}
-	return false
+	return tuipkg.FilterAgentChrome(lines)
 }
 
 // trimInputFooter detects and removes the agent shell's input UI block from
