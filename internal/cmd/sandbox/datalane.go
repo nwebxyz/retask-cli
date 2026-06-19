@@ -29,10 +29,11 @@ type dataLaneMsgNewSession struct {
 }
 
 type dataLaneMsg struct {
-	Type       string                   `json:"type"`
-	SessionID  string                   `json:"session_id,omitempty"`
-	Token      string                   `json:"token,omitempty"`
-	NewSession *dataLaneMsgNewSession   `json:"new_session,omitempty"`
+	Type       string                 `json:"type"`
+	SessionID  string                 `json:"session_id,omitempty"`
+	SandboxID  string                 `json:"sandbox_id,omitempty"`
+	Token      string                 `json:"token,omitempty"`
+	NewSession *dataLaneMsgNewSession `json:"new_session,omitempty"`
 }
 
 // DataLane manages the persistent reverse WebSocket to sandbox-proxy.
@@ -152,11 +153,11 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 			dl.sessions.Remove(msg.SessionID)
 
 		case "stop_sandbox":
-			dl.logInfo("stop_sandbox")
+			dl.logInfo("stop_sandbox", "sandbox_id", msg.SandboxID)
 			dl.sessions.StopAll()
 
 		case "delete_sandbox":
-			dl.logInfo("delete_sandbox")
+			dl.logInfo("delete_sandbox", "sandbox_id", msg.SandboxID)
 			dl.sessions.StopAll()
 			conn.Close(websocket.StatusNormalClosure, "deleted") //nolint:errcheck
 			return errSandboxDeleted
