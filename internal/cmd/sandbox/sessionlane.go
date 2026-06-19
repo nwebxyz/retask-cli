@@ -112,7 +112,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		initCommand = "bash"
 	}
 	// cd into session folder before running the init command.
-	shellCmd := fmt.Sprintf("cd '%s' && exec %s", sessionDir, initCommand)
+	shellCmd := fmt.Sprintf("cd '%s' && %s", sessionDir, initCommand)
 
 	agCfg := sm.agentCfg
 	agCfg.Env = env
