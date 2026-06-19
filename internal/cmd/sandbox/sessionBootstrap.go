@@ -166,40 +166,40 @@ func readChoice(ctx context.Context, conn *websocket.Conn) int {
 // Returns (sessionDir, envSlice, nil) on success.
 // Returns ("", nil, ErrAborted) if the user chooses Exit from the failure menu.
 // Returns ("", nil, err) on non-recoverable error.
-func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (string, []string, error) {
-	sessionDir := filepath.Join(b.BaseDir, "session-"+b.SessionID)
+func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessionDir string, env []string, err error) {
+	sessionDir = filepath.Join(b.BaseDir, "session-"+b.SessionID)
 
+	b.logInfo("session_bootstrap_starting", "session_id", b.SessionID)
 	writeTerm(ctx, conn, "\r\n[retask] Setting up session...\r\n")
 
-	if err := b.setupFolder(sessionDir); err != nil {
+	if err = b.setupFolder(sessionDir); err != nil {
 		return "", nil, fmt.Errorf("create session folder: %w", err)
 	}
-	if err := b.writeAgentConfigs(sessionDir); err != nil {
+	if err = b.writeAgentConfigs(sessionDir); err != nil {
 		return "", nil, fmt.Errorf("write agent configs: %w", err)
 	}
 
 	if len(b.Config.GetGitRepos()) > 0 {
-	outer:
 		for {
-			err := b.setupGitRepos(ctx, conn, sessionDir)
+			err = b.setupGitRepos(ctx, conn, sessionDir)
 			if err == nil {
 				break
 			}
 			writeTerm(ctx, conn, fmt.Sprintf("\r\n[retask] Git repo setup failed: %v\r\n", err))
 			writeTerm(ctx, conn, "\r\n  1) Retry\r\n  2) Continue (skip repos)\r\n  3) Exit\r\n\r\nSelection [2]: ")
-			switch readChoice(ctx, conn) {
-			case 1:
-				continue outer
-			case 3:
+			choice := readChoice(ctx, conn)
+			if choice == 3 {
 				return "", nil, ErrAborted
-			default:
-				break outer
+			}
+			if choice != 1 {
+				break
 			}
 		}
 	}
 
-	env := b.buildSessionEnv()
+	env = b.buildSessionEnv()
 
+	b.logInfo("session_bootstrap_complete", "session_id", b.SessionID)
 	writeTerm(ctx, conn, "\r\n[retask] Session ready.\r\n\r\n")
 	return sessionDir, env, nil
 }
@@ -237,6 +237,9 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 			}
 		}
 	}
+	if githubToken == "" {
+		writeTerm(ctx, conn, "[repos] Warning: no GITHUB_TOKEN / GH_TOKEN found — private repos may fail to clone\r\n")
+	}
 
 	for _, repo := range b.Config.GetGitRepos() {
 		targetDir := repo.GetTargetDir()
@@ -258,6 +261,11 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 }
 
 func (b *SessionBootstrap) cloneWithRetry(ctx context.Context, conn *websocket.Conn, url, branch, dest string) error {
+	if info, err := os.Stat(dest); err == nil && info.IsDir() {
+		writeTerm(ctx, conn, fmt.Sprintf("[repos] %s already exists, skipping clone\r\n", dest))
+		b.logInfo("session_repo_skip", "dest", dest)
+		return nil
+	}
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		writeTerm(ctx, conn, fmt.Sprintf("\r\n[repos] cloning %s @ %s (attempt %d/3)...\r\n", url, branch, attempt))
@@ -265,15 +273,29 @@ func (b *SessionBootstrap) cloneWithRetry(ctx context.Context, conn *websocket.C
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			writeTerm(ctx, conn, fmt.Sprintf("[repos] cloned %s\r\n", dest))
+			b.logInfo("session_repo_cloned", "dest", dest)
 			return nil
 		}
 		lastErr = fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(out)))
+		b.logError("session_repo_clone_failed", "dest", dest, "attempt", attempt, "error", err)
 		writeTerm(ctx, conn, fmt.Sprintf("[repos] attempt %d failed: %v\r\n", attempt, err))
 		if attempt < 3 {
 			time.Sleep(time.Second)
 		}
 	}
 	return lastErr
+}
+
+func (b *SessionBootstrap) logInfo(msg string, args ...any) {
+	if b.Log != nil {
+		b.Log.Info(msg, args...)
+	}
+}
+
+func (b *SessionBootstrap) logError(msg string, args ...any) {
+	if b.Log != nil {
+		b.Log.Error(msg, args...)
+	}
 }
 
 func (b *SessionBootstrap) buildSessionEnv() []string {

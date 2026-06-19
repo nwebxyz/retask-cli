@@ -25,7 +25,6 @@ type SessionManager struct {
 	fleetCfg  agentfleet.FleetConfig
 	agentCfg  agentfleet.AgentConfig
 	log       *slog.Logger
-	// new fields:
 	workspaceID string
 	sandboxName string
 	baseDir     string
@@ -84,8 +83,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		sm.logError("session_lane_error", "session_id", sessionID, "error", err)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "session lane: %s/ws/session-lane?sandbox_id=%s&session_id=%s\n",
-		sm.wsBase, sm.sandboxID, sessionID)
+	sm.logInfo("session_lane_connected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
 
 	// Run bootstrap — writes files, clones repos, builds env.
 	bs := &SessionBootstrap{
