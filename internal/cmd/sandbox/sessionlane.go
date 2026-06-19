@@ -146,6 +146,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		sm.mu.Lock()
 		delete(sm.sessions, sessionID)
 		sm.mu.Unlock()
+		sm.fleet.Remove(sessionID)
 		sm.logInfo("session_stopped", "session_id", sessionID)
 	}()
 }
@@ -180,6 +181,7 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 
 // Stop sends SIGTERM to the session's PTY process.
 func (sm *SessionManager) Stop(sessionID string) {
+	sm.logInfo("session_stopping", "session_id", sessionID)
 	sm.mu.Lock()
 	r := sm.sessions[sessionID]
 	sm.mu.Unlock()
@@ -191,6 +193,7 @@ func (sm *SessionManager) Stop(sessionID string) {
 // Remove stops the session's PTY and removes it from the fleet so it
 // disappears from the TUI immediately. Used for delete_session messages.
 func (sm *SessionManager) Remove(sessionID string) {
+	sm.logInfo("session_removing", "session_id", sessionID)
 	sm.mu.Lock()
 	r := sm.sessions[sessionID]
 	delete(sm.sessions, sessionID)
