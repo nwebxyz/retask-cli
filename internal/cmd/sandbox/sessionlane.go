@@ -44,21 +44,17 @@ func newSessionManager(
 	}
 }
 
-// Start handles a new_session event: launches PTY and connects session lane.
-// initCommand and env come from the data lane new_session message.
-func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name, initCommand string, env map[string]string) {
-	if initCommand == "" {
-		sm.logError("session_no_init_command", "session_id", sessionID)
-		return
-	}
+// Start handles a new_session event: runs SessionBootstrap then launches PTY
+// and connects session lane.
+// config, systemPrompt, and seedPrompt come from the data lane new_session message.
+// TODO(task-6): implement full bootstrap flow using SessionBootstrap.
+func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, config json.RawMessage, systemPrompt, seedPrompt string) {
+	initCommand := "bash"
 	if name == "" {
 		name = sessionID
 	}
 
 	var envSlice []string
-	for k, v := range env {
-		envSlice = append(envSlice, k+"="+v)
-	}
 
 	agCfg := sm.agentCfg
 	agCfg.Env = envSlice
