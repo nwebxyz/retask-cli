@@ -22,6 +22,30 @@ import (
 // starting a PTY.
 var ErrAborted = errors.New("session aborted by user")
 
+const bannerArt = `
+                              #####
+                              #######
+  ----                #################
+------------      ######################
+-------------   ########################
+  ----------- #########################
+          -- #######          #######
+             ######           #####
+            ######
+            ######
+           ######             -----
+          ####### --          -------
+  ############## ----------------------
+##############   -----------------------
+############      ----------------------
+  ######                ---------------
+                              -------
+                              -----
+
+             R E T A S K
+
+`
+
 // SessionBootstrap performs per-session setup for a Private VM sandbox:
 // creates the session folder, writes agent configs, clones git repos, and
 // builds the process environment.
@@ -170,7 +194,7 @@ func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessi
 	sessionDir = filepath.Join(b.BaseDir, "session-"+b.SessionID)
 
 	b.logInfo("session_bootstrap_starting", "session_id", b.SessionID)
-	writeTerm(ctx, conn, "\r\n[retask] Setting up session...\r\n")
+	b.writeBanner(ctx, conn)
 
 	if err = b.setupFolder(sessionDir); err != nil {
 		return "", nil, fmt.Errorf("create session folder: %w", err)
@@ -295,6 +319,14 @@ func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *webs
 		}
 	}
 	return lastErr
+}
+
+func (b *SessionBootstrap) writeBanner(ctx context.Context, conn *websocket.Conn) {
+	// Convert Unix newlines to terminal CRLF.
+	art := strings.ReplaceAll(bannerArt, "\n", "\r\n")
+	info := fmt.Sprintf("  Workspace : %s\r\n  Sandbox   : %s\r\n  Session   : %s\r\n\r\n",
+		b.WorkspaceID, b.SandboxID, b.SessionID)
+	writeTerm(ctx, conn, art+info)
 }
 
 func (b *SessionBootstrap) logInfo(msg string, args ...any) {
