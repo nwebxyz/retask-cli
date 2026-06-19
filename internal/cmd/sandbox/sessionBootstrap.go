@@ -253,17 +253,28 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 		dest := filepath.Join(sessionDir, targetDir)
 		cloneURL := injectGithubToken(repo.GetUrl(), githubToken)
 
-		if err := b.cloneWithRetry(ctx, conn, cloneURL, branch, dest); err != nil {
+		if err := b.cloneOrFetchWithRetry(ctx, conn, cloneURL, branch, dest); err != nil {
 			return fmt.Errorf("clone %s: %w", repo.GetUrl(), err)
 		}
 	}
 	return nil
 }
 
-func (b *SessionBootstrap) cloneWithRetry(ctx context.Context, conn *websocket.Conn, url, branch, dest string) error {
+func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *websocket.Conn, url, branch, dest string) error {
 	if info, err := os.Stat(dest); err == nil && info.IsDir() {
-		writeTerm(ctx, conn, fmt.Sprintf("[repos] %s already exists, skipping clone\r\n", dest))
-		b.logInfo("session_repo_skip", "dest", dest)
+		writeTerm(ctx, conn, fmt.Sprintf("[repos] %s exists, fetching latest...\r\n", dest))
+		cmd := exec.CommandContext(ctx, "git", "-C", dest, "fetch", "--depth=1", "origin", branch)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			b.logError("session_repo_fetch_failed", "dest", dest, "error", err)
+			return fmt.Errorf("fetch %s: %w\n%s", dest, err, strings.TrimSpace(string(out)))
+		}
+		cmd = exec.CommandContext(ctx, "git", "-C", dest, "reset", "--hard", "FETCH_HEAD")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			b.logError("session_repo_reset_failed", "dest", dest, "error", err)
+			return fmt.Errorf("reset %s: %w\n%s", dest, err, strings.TrimSpace(string(out)))
+		}
+		writeTerm(ctx, conn, fmt.Sprintf("[repos] updated %s\r\n", dest))
+		b.logInfo("session_repo_updated", "dest", dest)
 		return nil
 	}
 	var lastErr error
