@@ -107,6 +107,18 @@ if cmd.Flags().Changed("status") { data["status"] = status }
 svc.SetPartialTask(ctx, &commonv1.PartialData{Id: args[0], Data: data})
 ```
 
+### Named return parameters
+
+Functions with multiple return values must use named return parameters for clarity:
+
+```go
+// ✅ correct
+func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessionDir string, env []string, err error)
+
+// ❌ wrong
+func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (string, []string, error)
+```
+
 ### Help text template
 
 Every command's `Long` description follows:

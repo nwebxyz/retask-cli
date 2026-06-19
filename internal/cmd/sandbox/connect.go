@@ -121,7 +121,20 @@ Environment:
 			}
 			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
 
-			sm := newSessionManager(sandboxID, wsBase, fleet, fleetCfg.Fleet, fleetCfg.Agent, logger)
+			baseDir, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			sm := newSessionManager(
+				sandboxID, wsBase,
+				fleet, fleetCfg.Fleet, fleetCfg.Agent,
+				logger,
+				sbResp.Msg.WorkspaceId,
+				sbResp.Msg.Name,
+				baseDir,
+				jwt,
+				profile.Endpoint,
+			)
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
 			go dl.Run(ctx)
