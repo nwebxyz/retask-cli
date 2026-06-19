@@ -60,7 +60,7 @@ func buildManifest() manifest {
 		Commands: []commandEntry{
 			{Command: "retask auth login", Description: "Exchange PAT for JWT, save to profile", Example: "retask auth login"},
 			{Command: "retask auth logout", Description: "Clear cached JWT from active profile", Example: "retask auth logout"},
-			{Command: "retask auth whoami", Description: "Print current token claims (workspace, expiry)", Example: "retask auth whoami"},
+			{Command: "retask auth whoami", Description: "Print identity and workspace membership for the active token. Output: user_nrn, workspace_id, jwt_expires, endpoint, workspace_member.{nrn, role, membership_status, display_name, name, email, joined_at}", Example: "retask auth whoami"},
 			{Command: "retask auth pat list", Description: "List PATs for current user", Example: "retask auth pat list"},
 			{Command: "retask auth pat create", Description: "Create a new PAT", Flags: []string{"--name", "--description", "--expires-at"}, Example: "retask auth pat create --name ci-bot"},
 			{Command: "retask auth pat revoke", Description: "Revoke a PAT by ID", Example: "retask auth pat revoke <pat-id>"},
