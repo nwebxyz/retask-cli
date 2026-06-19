@@ -18,6 +18,8 @@ import (
 	authv1 "github.com/nwebxyz/retask-cli/proto-gen/auth/v1"
 	authv1connect "github.com/nwebxyz/retask-cli/proto-gen/auth/v1/authv1connect"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
+	workspacev1 "github.com/nwebxyz/retask-cli/proto-gen/workspace/v1"
+	workspacev1connect "github.com/nwebxyz/retask-cli/proto-gen/workspace/v1/workspacev1connect"
 )
 
 func NewCommand(gf *flags.Global) *cobra.Command {
@@ -121,22 +123,97 @@ func newLogoutCommand(gf *flags.Global) *cobra.Command {
 func newWhoamiCommand(gf *flags.Global) *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
-		Short: "Print current token claims (workspace, expiry)",
+		Short: "Print identity and workspace membership for the active token",
+		Long: `Print identity and workspace membership for the active token.
+
+Usage example:
+  retask auth whoami
+
+Output fields: user_nrn, workspace_id, jwt_expires, endpoint, workspace_member.{nrn, role, membership_status, display_name, name, email, joined_at}`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
 			profile, _, err := loadProfile(gf)
 			if err != nil {
 				return err
 			}
-			if profile.CachedJWT == "" && os.Getenv("NWEB_API_TOKEN") == "" {
-				return fmt.Errorf("not logged in. Run: retask auth login")
+			resolver, err := buildResolver(gf)
+			if err != nil {
+				return err
 			}
-			return output.Print(gf.Pretty, map[string]any{
-				"workspace_id": profile.WorkspaceID,
-				"jwt_expires":  profile.JWTExpiresAt.Format(time.RFC3339),
-				"endpoint":     profile.Endpoint,
-			})
+			jwt, err := resolver.Token(ctx)
+			if err != nil {
+				return err
+			}
+			claims, err := auth.ParseClaims(jwt)
+			if err != nil {
+				return err
+			}
+			wsID := claims.WorkspaceID
+			if wsID == "" {
+				return fmt.Errorf("workspace_id not found in token")
+			}
+
+			httpClient := client.New(jwt, gf.Insecure, gf.Verbose)
+			baseURL := client.BaseURL(profile.Endpoint, gf.Insecure)
+			wsSvc := workspacev1connect.NewWorkspaceServiceClient(httpClient, baseURL, client.Options(gf.Transport)...)
+
+			resp, err := wsSvc.GetWorkspaceMembers(ctx, connect.NewRequest(&workspacev1.WorkspaceMembersRequest{
+				WorkspaceId: wsID,
+				UserNrns:    []string{claims.Sub},
+			}))
+			if err != nil {
+				return err
+			}
+
+			jwtExpires := profile.JWTExpiresAt
+			if jwtExpires.IsZero() {
+				jwtExpires = claims.ExpiresAt()
+			}
+
+			out := whoamiOutput{
+				UserNrn:     claims.Sub,
+				WorkspaceID: wsID,
+				JWTExpires:  jwtExpires.Format(time.RFC3339),
+				Endpoint:    profile.Endpoint,
+			}
+			if len(resp.Msg.Members) > 0 {
+				m := resp.Msg.Members[0]
+				snap := memberSnapshot{
+					Nrn:              "nweb:workspace:member:" + m.WorkspaceMemberId,
+					Role:             workspacev1.WorkspaceMemberRole_name[int32(m.Role)],
+					MembershipStatus: workspacev1.MembershipStatus_name[int32(m.MembershipStatus)],
+					DisplayName:      m.DisplayName,
+				}
+				if p := m.MemberProfile; p != nil {
+					snap.Name = p.Name
+					snap.Email = p.Email
+				}
+				if m.JoinedAt != nil {
+					snap.JoinedAt = m.JoinedAt.AsTime().Format(time.RFC3339)
+				}
+				out.WorkspaceMember = &snap
+			}
+			return output.Print(gf.Pretty, out)
 		},
 	}
+}
+
+type whoamiOutput struct {
+	UserNrn         string          `json:"user_nrn"`
+	WorkspaceID     string          `json:"workspace_id"`
+	JWTExpires      string          `json:"jwt_expires"`
+	Endpoint        string          `json:"endpoint"`
+	WorkspaceMember *memberSnapshot `json:"workspace_member,omitempty"`
+}
+
+type memberSnapshot struct {
+	Nrn              string `json:"nrn"`
+	Role             string `json:"role"`
+	MembershipStatus string `json:"membership_status"`
+	DisplayName      string `json:"display_name,omitempty"`
+	Name             string `json:"name,omitempty"`
+	Email            string `json:"email,omitempty"`
+	JoinedAt         string `json:"joined_at,omitempty"`
 }
 
 func newPatCommand(gf *flags.Global) *cobra.Command {
