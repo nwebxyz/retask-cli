@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/coder/websocket"
 	agentfleet "github.com/hoaitan/agentfleet"
+	"google.golang.org/protobuf/encoding/protojson"
+
+	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 )
 
 // SessionManager creates and tracks one agentfleet Runner per active sandbox session.
@@ -21,6 +25,12 @@ type SessionManager struct {
 	fleetCfg  agentfleet.FleetConfig
 	agentCfg  agentfleet.AgentConfig
 	log       *slog.Logger
+	// new fields:
+	workspaceID string
+	sandboxName string
+	baseDir     string
+	jwt         string
+	endpoint    string
 
 	mu       sync.Mutex
 	sessions map[string]*agentfleet.Runner // keyed by session_id
@@ -32,54 +42,94 @@ func newSessionManager(
 	fleetCfg agentfleet.FleetConfig,
 	agentCfg agentfleet.AgentConfig,
 	log *slog.Logger,
+	workspaceID, sandboxName, baseDir, jwt, endpoint string,
 ) *SessionManager {
 	return &SessionManager{
-		sandboxID: sandboxID,
-		wsBase:    wsBase,
-		fleet:     fleet,
-		fleetCfg:  fleetCfg,
-		agentCfg:  agentCfg,
-		log:       log,
-		sessions:  make(map[string]*agentfleet.Runner),
+		sandboxID:   sandboxID,
+		wsBase:      wsBase,
+		fleet:       fleet,
+		fleetCfg:    fleetCfg,
+		agentCfg:    agentCfg,
+		log:         log,
+		workspaceID: workspaceID,
+		sandboxName: sandboxName,
+		baseDir:     baseDir,
+		jwt:         jwt,
+		endpoint:    endpoint,
+		sessions:    make(map[string]*agentfleet.Runner),
 	}
 }
 
-// Start handles a new_session event: runs SessionBootstrap then launches PTY
-// and connects session lane.
-// config, systemPrompt, and seedPrompt come from the data lane new_session message.
-// TODO(task-6): implement full bootstrap flow using SessionBootstrap.
-func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, config json.RawMessage, systemPrompt, seedPrompt string) {
-	initCommand := "bash"
+// Start handles a new_session event: connects the session lane, runs bootstrap,
+// then launches the PTY and bridges it to the session lane.
+func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string) {
 	if name == "" {
 		name = sessionID
 	}
 
-	var envSlice []string
+	// Parse Sandbox_Config from proto JSON (camelCase field names).
+	var cfg sandboxv1.Sandbox_Config
+	if len(configJSON) > 0 {
+		if err := protojson.Unmarshal(configJSON, &cfg); err != nil {
+			sm.logError("session_config_parse_error", "session_id", sessionID, "error", err)
+			return
+		}
+	}
+
+	// Connect session lane first so bootstrap can stream logs to the FE.
+	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
+		sm.wsBase, sm.sandboxID, sessionID, token)
+	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		sm.logError("session_lane_error", "session_id", sessionID, "error", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "session lane: %s/ws/session-lane?sandbox_id=%s&session_id=%s\n",
+		sm.wsBase, sm.sandboxID, sessionID)
+
+	// Run bootstrap — writes files, clones repos, builds env.
+	bs := &SessionBootstrap{
+		SessionID:    sessionID,
+		SessionName:  name,
+		SandboxID:    sm.sandboxID,
+		SandboxName:  sm.sandboxName,
+		WorkspaceID:  sm.workspaceID,
+		Config:       &cfg,
+		SystemPrompt: systemPrompt,
+		SeedPrompt:   seedPrompt,
+		JWT:          sm.jwt,
+		Endpoint:     sm.endpoint,
+		BaseDir:      sm.baseDir,
+		Log:          sm.log,
+	}
+	sessionDir, env, err := bs.Run(ctx, wsConn)
+	if err != nil {
+		sm.logError("session_bootstrap_failed", "session_id", sessionID, "error", err)
+		wsConn.CloseNow() //nolint:errcheck
+		return
+	}
+
+	initCommand := cfg.GetSessionInitCommand()
+	if initCommand == "" {
+		initCommand = "bash"
+	}
+	// cd into session folder before running the init command.
+	shellCmd := fmt.Sprintf("cd '%s' && exec %s", sessionDir, initCommand)
 
 	agCfg := sm.agentCfg
-	agCfg.Env = envSlice
+	agCfg.Env = env
 
 	sm.logInfo("session_starting", "session_id", sessionID, "name", name, "init_command", initCommand)
-	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", initCommand}, agCfg)
+	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", shellCmd}, agCfg)
 	task := &agentfleet.BasicTask{TaskID: sessionID, TaskName: name, Cmd: initCommand}
 	r := agentfleet.NewRunner(task, ag, sm.fleetCfg, agCfg)
 	r.Start()
 
 	if err := sm.fleet.Add(ctx, r); err != nil {
 		r.Stop() //nolint:errcheck
+		wsConn.CloseNow() //nolint:errcheck
 		return
 	}
-
-	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
-		sm.wsBase, sm.sandboxID, sessionID, token)
-	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil {
-		sm.logError("session_lane_error", "session_id", sessionID, "error", err)
-		r.Stop() //nolint:errcheck
-		return
-	}
-	fmt.Fprintf(os.Stderr, "session lane: %s/ws/session-lane?sandbox_id=%s&session_id=%s\n",
-		sm.wsBase, sm.sandboxID, sessionID)
 
 	sm.mu.Lock()
 	sm.sessions[sessionID] = r
@@ -89,7 +139,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	go func() {
 		err := sm.readLoop(ctx, wsConn, r)
 		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
-		r.Stop() //nolint:errcheck  // ensure PTY exits when WS disconnects
+		r.Stop() //nolint:errcheck
 	}()
 
 	go func() {
@@ -151,6 +201,7 @@ func (sm *SessionManager) Remove(sessionID string) {
 		r.Stop() //nolint:errcheck
 		sm.fleet.Remove(sessionID)
 	}
+	os.RemoveAll(filepath.Join(sm.baseDir, "session-"+sessionID)) //nolint:errcheck
 }
 
 // StopAll stops every active session.
