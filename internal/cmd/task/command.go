@@ -61,8 +61,8 @@ func connect(gf *flags.Global) (taskv1connect.TaskServiceClient, func(), error) 
 // ── task list ─────────────────────────────────────────────────────────────────
 
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var projectID, priority, assigneeNrn string
-	var statusIDs []string
+	var projectID, priority string
+	var statusIDs, assigneeNrns []string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List tasks",
@@ -72,12 +72,12 @@ Usage examples:
   retask task list
   retask task list --project-id proj_abc123
   retask task list --project-id proj_abc123 --priority HIGH
-  retask task list --assignee "nweb:workspace:member:uuid"
+  retask task list --assignee "nweb:workspace:member:uuid1" --assignee "nweb:workspace:member:uuid2"
 
 Flags:
   --project-id string   Filter by project ID
-  --status string       Filter by status ID (can be specified multiple times)
-  --assignee string     Filter by assignee NRN (e.g. nweb:workspace:member:<uuid>)
+  --status string       Filter by status ID (repeatable)
+  --assignee string     Filter by assignee NRN (repeatable, format: nweb:workspace:member:<uuid>)
   --priority string     Filter by priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
 
 Output fields: task_id, project_id, workspace_id, key, title, description, priority, status, due_at, assignee_nrns, created_at, updated_at`,
@@ -95,8 +95,8 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 			if len(statusIDs) > 0 {
 				filter.StatusIds = statusIDs
 			}
-			if assigneeNrn != "" {
-				filter.AssigneeNrns = []string{assigneeNrn}
+			if len(assigneeNrns) > 0 {
+				filter.AssigneeNrns = assigneeNrns
 			}
 			if cmd.Flags().Changed("priority") {
 				v, ok := taskv1.Task_Priority_value[priority]
@@ -121,7 +121,7 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 	}
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Filter by project ID")
 	cmd.Flags().StringArrayVar(&statusIDs, "status", nil, "Filter by status ID (repeatable)")
-	cmd.Flags().StringVar(&assigneeNrn, "assignee", "", "Filter by assignee NRN")
+	cmd.Flags().StringArrayVar(&assigneeNrns, "assignee", nil, "Filter by assignee NRN (repeatable)")
 	cmd.Flags().StringVar(&priority, "priority", "", "Filter by priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT")
 	return cmd
 }
