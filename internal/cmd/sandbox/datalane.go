@@ -22,9 +22,10 @@ const (
 var errSandboxDeleted = errors.New("sandbox deleted")
 
 type dataLaneMsgNewSession struct {
-	Name        string            `json:"name,omitempty"`
-	InitCommand string            `json:"init_command,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
+	Name         string          `json:"name,omitempty"`
+	Config       json.RawMessage `json:"config,omitempty"`
+	SystemPrompt string          `json:"system_prompt,omitempty"`
+	SeedPrompt   string          `json:"seed_prompt,omitempty"`
 }
 
 type dataLaneMsg struct {
@@ -140,7 +141,7 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 				dl.logWarn("new_session_missing_payload", "session_id", msg.SessionID)
 				continue
 			}
-			go dl.sessions.Start(ctx, msg.SessionID, msg.Token, msg.NewSession.Name, msg.NewSession.InitCommand, msg.NewSession.Env)
+			go dl.sessions.Start(ctx, msg.SessionID, msg.Token, msg.NewSession.Name, msg.NewSession.Config, msg.NewSession.SystemPrompt, msg.NewSession.SeedPrompt)
 
 		case "stop_session":
 			dl.logInfo("stop_session", "session_id", msg.SessionID)
