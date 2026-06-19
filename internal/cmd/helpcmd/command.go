@@ -117,7 +117,7 @@ func buildManifest() manifest {
 			{Command: "retask sandbox session list", Description: "List sessions", Flags: []string{"--sandbox-id"}, Example: "retask sandbox session list --sandbox-id <sb-id>"},
 			{Command: "retask sandbox session get", Description: "Get a session by ID", Example: "retask sandbox session get <session-id>"},
 			{Command: "retask sandbox session create", Description: "Create a sandbox session", Flags: []string{"--sandbox-id"}, Example: "retask sandbox session create --sandbox-id <sb-id>"},
-			{Command: "retask sandbox session update", Description: "Partial update a session", Flags: []string{"--status"}, Example: "retask sandbox session update <id> --status SESSION_STATUS_IDLE"},
+			{Command: "retask sandbox session update", Description: "Partial update a session", Flags: []string{"--name", "--seed-nrn", "--seed-prompt"}, Example: "retask sandbox session update <id> --name \"My Session\""},
 			{Command: "retask sandbox session stop", Description: "Stop a session", Example: "retask sandbox session stop <session-id>"},
 			{Command: "retask sandbox session delete", Description: "Delete a session", Example: "retask sandbox session delete <session-id>"},
 			{Command: "retask sandbox connect", Description: "Connect this machine as a Private VM sandbox (long-running)", Flags: []string{"--mode"}, Example: "retask sandbox connect <sandbox-id> --mode headless"},

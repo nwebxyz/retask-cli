@@ -459,29 +459,35 @@ Output fields: session_id`,
 // ── sandbox session update ────────────────────────────────────────────────────
 
 func newSessionUpdateCommand(gf *flags.Global) *cobra.Command {
-	var status string
+	var name, seedNRN, seedPrompt string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update an existing session",
 		Long: `Update fields of an existing session using partial update (only changed fields are sent).
 
 Usage examples:
-  retask sandbox session update session_abc123 --status STOPPED
+  retask sandbox session update session_abc123 --name "My Session"
+  retask sandbox session update session_abc123 --seed-prompt "Focus on the auth module"
+  retask sandbox session update session_abc123 --seed-nrn "nweb:retask-task:task:<uuid>"
 
 Flags:
-  --status string   New session status: ACTIVE, IDLE, TIMEOUT, STOPPED
+  --name string          New session name
+  --seed-nrn string      Seed NRN (empty string clears it)
+  --seed-prompt string   Seed prompt text
 
 Output fields: session_id`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			data := make(map[string]string)
 
-			if cmd.Flags().Changed("status") {
-				_, ok := sandboxv1.Session_Status_value["STATUS_"+status]
-				if !ok {
-					return fmt.Errorf("invalid --status %q. Valid values: ACTIVE, IDLE, TIMEOUT, STOPPED", status)
-				}
-				data["status"] = status
+			if cmd.Flags().Changed("name") {
+				data["name"] = name
+			}
+			if cmd.Flags().Changed("seed-nrn") {
+				data["seed_nrn"] = seedNRN
+			}
+			if cmd.Flags().Changed("seed-prompt") {
+				data["seed_prompt"] = seedPrompt
 			}
 
 			if len(data) == 0 {
@@ -503,7 +509,9 @@ Output fields: session_id`,
 			return output.Print(gf.Pretty, map[string]string{"session_id": resp.Msg.Id})
 		},
 	}
-	cmd.Flags().StringVar(&status, "status", "", "New session status: ACTIVE, IDLE, TIMEOUT, STOPPED")
+	cmd.Flags().StringVar(&name, "name", "", "New session name")
+	cmd.Flags().StringVar(&seedNRN, "seed-nrn", "", "Seed NRN (empty string clears it)")
+	cmd.Flags().StringVar(&seedPrompt, "seed-prompt", "", "Seed prompt text")
 	return cmd
 }
 
