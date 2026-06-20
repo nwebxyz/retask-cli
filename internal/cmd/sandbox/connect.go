@@ -30,6 +30,7 @@ import (
 func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
 	var autoOpen bool
+	var noAutoRespond bool
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
 		Short: "Connect this machine as a Private VM sandbox",
@@ -44,12 +45,14 @@ Usage example:
   retask sandbox connect sandbox_abc123 --auto-open
 
 Flags:
-  --mode string  Running mode: auto, tui, headless (default: auto)
-  --auto-open    Auto-open a terminal tab for each new session (default: false)
+  --mode string      Running mode: auto, tui, headless (default: auto)
+  --auto-open        Auto-open a terminal tab for each new session (default: false)
+  --no-auto-respond  Disable auto-accepting known agent startup prompts (default: false)
 
 Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
-  RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag`,
+  RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag
+  RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
@@ -125,6 +128,7 @@ Environment:
 			if err != nil {
 				return err
 			}
+			autoRespond := !(noAutoRespond || os.Getenv("RETASK_SANDBOX_NO_AUTO_RESPOND") == "1")
 			sm := newSessionManager(
 				sandboxID, wsBase,
 				fleet, fleetCfg.Fleet, fleetCfg.Agent,
@@ -134,6 +138,7 @@ Environment:
 				baseDir,
 				jwt,
 				profile.Endpoint,
+				autoRespond,
 			)
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
@@ -162,6 +167,7 @@ Environment:
 	}
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Running mode: auto, tui, headless")
 	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
+	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
 	return cmd
 }
 
