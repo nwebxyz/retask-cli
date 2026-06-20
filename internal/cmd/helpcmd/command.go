@@ -110,7 +110,7 @@ func buildManifest() manifest {
 			{Command: "retask project-config set", Description: "Update Retask project config", Flags: []string{"--task-statuses", "--task-types", "--default-view"}, Example: "retask project-config set <project-id> --default-view TASK_VIEW_KANBAN"},
 			{Command: "retask sandbox list", Description: "List sandboxes", Example: "retask sandbox list"},
 			{Command: "retask sandbox get", Description: "Get a sandbox by ID", Example: "retask sandbox get <sandbox-id>"},
-			{Command: "retask sandbox create", Description: "Create a sandbox", Flags: []string{"--name", "--template-id"}, Example: "retask sandbox create --name my-sandbox --template-id <tmpl-id>"},
+			{Command: "retask sandbox create", Description: "Create a sandbox", Flags: []string{"--name", "--type", "--template-id", "--workspace-id"}, Example: "retask sandbox create --name my-sandbox --type CLOUD"},
 			{Command: "retask sandbox update", Description: "Update a sandbox", Flags: []string{"--name"}, Example: "retask sandbox update <id> --name new-name"},
 			{Command: "retask sandbox stop", Description: "Stop a running sandbox", Example: "retask sandbox stop <sandbox-id>"},
 			{Command: "retask sandbox delete", Description: "Delete a sandbox", Example: "retask sandbox delete <sandbox-id>"},

@@ -151,7 +151,7 @@ Output fields: sandbox_id, workspace_id, name, type, status, config, created_at,
 // ── sandbox create ────────────────────────────────────────────────────────────
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
-	var name, templateID, workspaceID string
+	var name, templateID, workspaceID, sandboxType string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new sandbox",
@@ -159,11 +159,13 @@ func newCreateCommand(gf *flags.Global) *cobra.Command {
 
 Usage examples:
   retask sandbox create --name "My Sandbox"
+  retask sandbox create --name "My Sandbox" --type PRIVATE
   retask sandbox create --name "My Sandbox" --template-id tmpl_abc123
   retask sandbox create --name "My Sandbox" --workspace-id ws_abc123
 
 Flags:
   --name string           Required. Sandbox name
+  --type string           Optional. Sandbox type: CLOUD, PRIVATE (default CLOUD)
   --template-id string    Optional. Source template ID to fork config from
   --workspace-id string   Optional. Workspace ID (overrides global flag)
 
@@ -185,6 +187,13 @@ Output fields: sandbox_id`,
 			if templateID != "" {
 				sandbox.SourceTemplateId = templateID
 			}
+			if cmd.Flags().Changed("type") {
+				v, ok := sandboxv1.Sandbox_Type_value["TYPE_"+sandboxType]
+				if !ok {
+					return fmt.Errorf("invalid --type %q. Valid values: CLOUD, PRIVATE", sandboxType)
+				}
+				sandbox.Type = sandboxv1.Sandbox_Type(v)
+			}
 
 			svc, close, err := connect(gf)
 			if err != nil {
@@ -199,6 +208,7 @@ Output fields: sandbox_id`,
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Sandbox name (required)")
+	cmd.Flags().StringVar(&sandboxType, "type", "", "Sandbox type: CLOUD, PRIVATE (default CLOUD)")
 	cmd.Flags().StringVar(&templateID, "template-id", "", "Source template ID to fork config from")
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID (overrides global flag and env var)")
 	return cmd
