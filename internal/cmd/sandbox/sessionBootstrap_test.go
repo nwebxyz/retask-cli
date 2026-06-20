@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -26,21 +27,20 @@ func TestDeriveTargetDir(t *testing.T) {
 	}
 }
 
-// --- injectGithubToken ---
+// --- normalizeGithubURL ---
 
-func TestInjectGithubToken(t *testing.T) {
-	token := "ghp_TOKEN"
+func TestNormalizeGithubURL(t *testing.T) {
 	tests := []struct {
 		url  string
 		want string
 	}{
 		{
-			"https://github.com/foo/bar.git",
-			"https://oauth2:ghp_TOKEN@github.com/foo/bar.git",
+			"git@github.com:foo/bar.git",
+			"https://github.com/foo/bar.git", // ssh form rewritten to https
 		},
 		{
-			"git@github.com:foo/bar.git",
-			"https://oauth2:ghp_TOKEN@github.com/foo/bar.git",
+			"https://github.com/foo/bar.git",
+			"https://github.com/foo/bar.git", // already https: unchanged
 		},
 		{
 			"https://gitlab.com/foo/bar.git",
@@ -48,13 +48,38 @@ func TestInjectGithubToken(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		assert.Equal(t, tc.want, injectGithubToken(tc.url, token), "url=%q", tc.url)
+		assert.Equal(t, tc.want, normalizeGithubURL(tc.url), "url=%q", tc.url)
 	}
 }
 
-func TestInjectGithubToken_EmptyToken(t *testing.T) {
-	url := "https://github.com/foo/bar.git"
-	assert.Equal(t, url, injectGithubToken(url, ""))
+// --- gitTokenEnv ---
+
+func TestGitTokenEnv_EmptyToken(t *testing.T) {
+	assert.Nil(t, gitTokenEnv(""))
+}
+
+func TestGitTokenEnv_InjectsScopedAuthHeader(t *testing.T) {
+	token := "ghp_TOKEN"
+	m := envToMap(gitTokenEnv(token))
+
+	assert.Equal(t, "1", m["GIT_CONFIG_COUNT"])
+	assert.Equal(t, "http.https://github.com/.extraHeader", m["GIT_CONFIG_KEY_0"])
+	assert.Equal(t, "0", m["GIT_TERMINAL_PROMPT"])
+
+	// The header value decodes to x-access-token:<token>.
+	const prefix = "Authorization: Basic "
+	val := m["GIT_CONFIG_VALUE_0"]
+	assert.True(t, strings.HasPrefix(val, prefix), "value=%q", val)
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(val, prefix))
+	assert.NoError(t, err)
+	assert.Equal(t, "x-access-token:"+token, string(decoded))
+}
+
+func TestGitTokenEnv_NeverLeaksRawToken(t *testing.T) {
+	token := "ghp_SECRET"
+	for _, e := range gitTokenEnv(token) {
+		assert.NotContains(t, e, token, "raw token leaked in env entry: %q", e)
+	}
 }
 
 // --- buildEnv ---

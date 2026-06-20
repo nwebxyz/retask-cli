@@ -76,21 +76,32 @@ func deriveTargetDir(url string) string {
 	return strings.TrimSuffix(last, ".git")
 }
 
-// injectGithubToken embeds token into GitHub HTTPS URLs so private repos can
-// be cloned without a credential helper. SSH-style URLs are converted to HTTPS
-// first. Non-GitHub URLs and empty tokens are returned unchanged.
-func injectGithubToken(rawURL, token string) string {
-	if token == "" {
-		return rawURL
-	}
+// normalizeGithubURL rewrites SSH-style GitHub URLs to HTTPS so the github.com
+// auth header from gitTokenEnv applies. Non-GitHub and already-HTTPS URLs are
+// returned unchanged. The token is never placed in the URL.
+func normalizeGithubURL(rawURL string) string {
 	if strings.HasPrefix(rawURL, "git@github.com:") {
-		rawURL = "https://github.com/" + strings.TrimPrefix(rawURL, "git@github.com:")
-	}
-	if strings.HasPrefix(rawURL, "https://github.com/") {
-		return "https://oauth2:" + token + "@github.com/" +
-			strings.TrimPrefix(rawURL, "https://github.com/")
+		return "https://github.com/" + strings.TrimPrefix(rawURL, "git@github.com:")
 	}
 	return rawURL
+}
+
+// gitTokenEnv returns environment variables that inject a github.com-scoped
+// Authorization header into git via config (GIT_CONFIG_COUNT, added in git
+// 2.31). This keeps the token out of the clone URL, process arguments, terminal
+// output, and the cloned repo's .git/config — the token only ever lives in the
+// child process environment. Returns nil for an empty token.
+func gitTokenEnv(token string) []string {
+	if token == "" {
+		return nil
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+	return []string{
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader",
+		"GIT_CONFIG_VALUE_0=Authorization: Basic " + auth,
+		"GIT_TERMINAL_PROMPT=0", // never block on an interactive credential prompt
+	}
 }
 
 // buildEnv merges three layers into a process environment slice.
@@ -264,6 +275,7 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 	if githubToken == "" {
 		writeTerm(ctx, conn, "[repos] Warning: no GITHUB_TOKEN / GH_TOKEN found — private repos may fail to clone\r\n")
 	}
+	tokenEnv := gitTokenEnv(githubToken)
 
 	for _, repo := range b.Config.GetGitRepos() {
 		targetDir := repo.GetTargetDir()
@@ -275,19 +287,20 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 			branch = "main"
 		}
 		dest := filepath.Join(sessionDir, targetDir)
-		cloneURL := injectGithubToken(repo.GetUrl(), githubToken)
+		cloneURL := normalizeGithubURL(repo.GetUrl())
 
-		if err := b.cloneOrFetchWithRetry(ctx, conn, cloneURL, branch, dest); err != nil {
+		if err := b.cloneOrFetchWithRetry(ctx, conn, cloneURL, branch, dest, tokenEnv); err != nil {
 			return fmt.Errorf("clone %s: %w", repo.GetUrl(), err)
 		}
 	}
 	return nil
 }
 
-func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *websocket.Conn, url, branch, dest string) error {
+func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *websocket.Conn, url, branch, dest string, tokenEnv []string) error {
 	if info, err := os.Stat(dest); err == nil && info.IsDir() {
 		writeTerm(ctx, conn, fmt.Sprintf("[repos] %s exists, fetching latest...\r\n", dest))
 		cmd := exec.CommandContext(ctx, "git", "-C", dest, "fetch", "--depth=1", "origin", branch)
+		cmd.Env = append(os.Environ(), tokenEnv...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			b.logError("session_repo_fetch_failed", "dest", dest, "error", err)
 			return fmt.Errorf("fetch %s: %w\n%s", dest, err, strings.TrimSpace(string(out)))
@@ -305,6 +318,7 @@ func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *webs
 	for attempt := 1; attempt <= 3; attempt++ {
 		writeTerm(ctx, conn, fmt.Sprintf("\r\n[repos] cloning %s @ %s (attempt %d/3)...\r\n", url, branch, attempt))
 		cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", "-b", branch, url, dest)
+		cmd.Env = append(os.Environ(), tokenEnv...)
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			writeTerm(ctx, conn, fmt.Sprintf("[repos] cloned %s\r\n", dest))
