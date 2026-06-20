@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,17 +20,18 @@ import (
 
 // SessionManager creates and tracks one agentfleet Runner per active sandbox session.
 type SessionManager struct {
-	sandboxID string
-	wsBase    string
-	fleet     *agentfleet.Fleet
-	fleetCfg  agentfleet.FleetConfig
-	agentCfg  agentfleet.AgentConfig
-	log       *slog.Logger
+	sandboxID   string
+	wsBase      string
+	fleet       *agentfleet.Fleet
+	fleetCfg    agentfleet.FleetConfig
+	agentCfg    agentfleet.AgentConfig
+	log         *slog.Logger
 	workspaceID string
 	sandboxName string
 	baseDir     string
 	jwt         string
 	endpoint    string
+	autoRespond bool // auto-accept known agent prompts (e.g. folder-trust)
 
 	mu       sync.Mutex
 	sessions map[string]*agentfleet.Runner // keyed by session_id
@@ -42,6 +44,7 @@ func newSessionManager(
 	agentCfg agentfleet.AgentConfig,
 	log *slog.Logger,
 	workspaceID, sandboxName, baseDir, jwt, endpoint string,
+	autoRespond bool,
 ) *SessionManager {
 	return &SessionManager{
 		sandboxID:   sandboxID,
@@ -55,6 +58,7 @@ func newSessionManager(
 		baseDir:     baseDir,
 		jwt:         jwt,
 		endpoint:    endpoint,
+		autoRespond: autoRespond,
 		sessions:    make(map[string]*agentfleet.Runner),
 	}
 }
@@ -124,7 +128,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	r.Start()
 
 	if err := sm.fleet.Add(ctx, r); err != nil {
-		r.Stop() //nolint:errcheck
+		r.Stop()          //nolint:errcheck
 		wsConn.CloseNow() //nolint:errcheck
 		return
 	}
@@ -133,7 +137,15 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	sm.sessions[sessionID] = r
 	sm.mu.Unlock()
 
-	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
+	var out io.Writer = &wsWriter{ctx: ctx, conn: wsConn}
+	if sm.autoRespond {
+		// Watch the PTY stream for known startup prompts (e.g. Claude Code's
+		// folder-trust dialog) and inject the accept keystroke, so unattended
+		// sessions don't stall waiting for a human. Degrades to pass-through
+		// once every rule has fired.
+		out = newPromptResponder(out, r.StdinWriter(), defaultPromptRules(), sm.log)
+	}
+	r.SetOutput(out)
 	go func() {
 		err := sm.readLoop(ctx, wsConn, r)
 		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
