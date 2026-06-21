@@ -27,9 +27,13 @@ type rule struct {
 // startup folder-trust dialog.
 func defaultPromptRules() []rule {
 	return []rule{
-		// Claude Code trust dialog: "...read, edit, and execute files here."
-		// Accept the highlighted default option ("Yes, proceed") with Enter.
-		{name: "claude-trust", match: "execute files here", send: "\r"},
+		// Claude Code startup trust dialog: "Quick safety check: Is this a
+		// project you created or one you trust?". Match on the headline question
+		// rather than the surrounding descriptive text — that text has changed
+		// between releases (it once read "...read, edit, and execute files
+		// here."), but the question itself is stable. Accept the highlighted
+		// default option ("Yes, proceed") with Enter.
+		{name: "claude-trust", match: "is this a project you created or one you trust", send: "\r"},
 	}
 }
 
