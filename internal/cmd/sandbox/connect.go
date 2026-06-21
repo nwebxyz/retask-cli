@@ -22,6 +22,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
 	"github.com/nwebxyz/retask-cli/internal/flags"
+	"github.com/nwebxyz/retask-cli/internal/version"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 	sandboxv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1/sandboxv1connect"
@@ -183,12 +184,22 @@ func proxyWSBase() string {
 	return ep
 }
 
-// makeTitleFunc returns the static left-side header: logo + sandbox name + dim full ID.
+// versionLabel renders the bracketed version tag for the header.
+// "dev" (unset ldflags) stays as-is; real versions get a "v" prefix.
+func versionLabel(v string) string {
+	if v == "dev" || v == "" {
+		return "[dev]"
+	}
+	return "[v" + v + "]"
+}
+
+// makeTitleFunc returns the static left-side header: logo + version + sandbox name + dim full ID.
 func makeTitleFunc(name, id string) func() string {
 	logo := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#c084fc")).Render("🔀 retask")
+	ver := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render(versionLabel(version.Version))
 	dimID := lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render(id)
 	label := name + "  " + dimID
-	return func() string { return logo + "  " + label }
+	return func() string { return logo + " " + ver + "  " + label }
 }
 
 // makeConnStatusFunc returns the right-side connection status indicator.

@@ -32,6 +32,21 @@ func TestProxyWSBase(t *testing.T) {
 	}
 }
 
+func TestVersionLabel(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"dev", "[dev]"},
+		{"", "[dev]"},
+		{"0.1.0", "[v0.1.0]"},
+		{"1.2.3", "[v1.2.3]"},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, tc.want, versionLabel(tc.in), "in=%q", tc.in)
+	}
+}
+
 func TestWsWriterWrite(t *testing.T) {
 	received := make(chan []byte, 1)
 
