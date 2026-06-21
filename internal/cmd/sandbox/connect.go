@@ -114,6 +114,16 @@ Environment:
 				Level: slog.LevelInfo,
 			}))
 
+			// Startup line for debugging: pins the CLI version and connect params.
+			logger.Info("retask sandbox connect",
+				"version", version.Version,
+				"sandbox_id", sandboxID,
+				"sandbox_name", sbResp.Msg.Name,
+				"mode", mode,
+				"tui", useTUI,
+				"proxy", wsBase,
+			)
+
 			// agentfleet config.
 			fleetCfg := agentfleet.DefaultConfig()
 			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)

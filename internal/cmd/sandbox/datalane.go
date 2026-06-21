@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/nwebxyz/retask-cli/internal/version"
 )
 
 const (
@@ -91,10 +94,10 @@ func (dl *DataLane) Run(ctx context.Context) {
 
 // connectOnce dials the data lane and reads messages until an error or delete_sandbox.
 func (dl *DataLane) connectOnce(ctx context.Context) error {
-	url := fmt.Sprintf("%s/ws/data-lane?sandbox_id=%s&token=%s",
-		dl.wsBase, dl.sandboxID, dl.jwt)
+	dialURL := fmt.Sprintf("%s/ws/data-lane?sandbox_id=%s&token=%s&client_version=%s",
+		dl.wsBase, dl.sandboxID, dl.jwt, url.QueryEscape(version.Version))
 
-	conn, _, err := websocket.Dial(ctx, url, nil)
+	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
 		return err
 	}
