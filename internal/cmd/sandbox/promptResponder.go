@@ -115,6 +115,12 @@ func (pr *promptResponder) Write(p []byte) (n int, err error) {
 // the write is deferred to a timer goroutine (see defaultInjectDelay) so the
 // agent's TUI has settled on its input-ready frame before the keystroke lands.
 func (pr *promptResponder) inject(r rule) {
+	// Log at detection time (synchronously), not just when writeAccept runs:
+	// the actual write may be deferred by injectDelay, and recording the match
+	// up front leaves a trail even if the session ends during that window.
+	if pr.log != nil {
+		pr.log.Info("prompt_detected", "rule", r.name, "match", r.match, "inject_delay", pr.injectDelay.String())
+	}
 	if pr.injectDelay > 0 {
 		time.AfterFunc(pr.injectDelay, func() { pr.writeAccept(r) })
 		return

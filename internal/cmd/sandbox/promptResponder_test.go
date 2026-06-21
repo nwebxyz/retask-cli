@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"bytes"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -130,6 +131,20 @@ func (l *lockedBuffer) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.b.String()
+}
+
+func TestPromptResponder_LogsAutoAccept(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logBuf, nil))
+	out, stdin := &bytes.Buffer{}, &bytes.Buffer{}
+	pr := newPromptResponder(out, stdin, defaultPromptRules(), 0, log)
+
+	pr.Write([]byte(trustPromptRaw)) //nolint:errcheck
+
+	logs := logBuf.String()
+	assert.Contains(t, logs, "prompt_detected", "detection is logged")
+	assert.Contains(t, logs, "prompt_autoresponded", "keystroke injection is logged")
+	assert.Contains(t, logs, "claude-trust", "the fired rule is named in the logs")
 }
 
 func TestPromptResponder_InjectDelayDefersKeystroke(t *testing.T) {
