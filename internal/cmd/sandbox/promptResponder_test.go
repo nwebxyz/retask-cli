@@ -3,7 +3,9 @@ package sandbox
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -38,14 +40,14 @@ const trustPromptRaw = "\x1b[2J\x1b[H\x1b[1m╭───────────
 	"│ project, or work from your team.) If not,   │\r\n" +
 	"│ take a moment to review the files first.    │\r\n" +
 	"│                                             │\r\n" +
-	"│ \x1b[7m❯ 1. Yes, proceed\x1b[0m                          │\r\n" +
+	"│ \x1b[7m❯ 1. Yes, I trust this folder\x1b[0m              │\r\n" +
 	"│   2. No, exit                               │\r\n" +
 	"╰─────────────────────────────────────────────╯\r\n"
 
 func newTestResponder(rules []rule) (pr *promptResponder, out, stdin *bytes.Buffer) {
 	out = &bytes.Buffer{}
 	stdin = &bytes.Buffer{}
-	pr = newPromptResponder(out, stdin, rules, nil)
+	pr = newPromptResponder(out, stdin, rules, 0, nil) // 0 delay: inject synchronously in tests
 	return pr, out, stdin
 }
 
@@ -85,14 +87,62 @@ func TestPromptResponder_FiresOncePerRule(t *testing.T) {
 func TestPromptResponder_SplitAcrossWrites(t *testing.T) {
 	pr, _, stdin := newTestResponder(defaultPromptRules())
 
-	// Split mid-question so the match phrase straddles the two writes; this
-	// exercises the rolling buffer accumulating a prompt across Write calls.
-	split := strings.Index(trustPromptRaw, "created or one you trust")
+	// Split mid-phrase so the match ("trust this folder") straddles the two
+	// writes; this exercises the rolling buffer accumulating a prompt across
+	// Write calls.
+	split := strings.Index(trustPromptRaw, "this folder")
 	pr.Write([]byte(trustPromptRaw[:split])) //nolint:errcheck
-	assert.Empty(t, stdin.String(), "no match before the question completes")
+	assert.Empty(t, stdin.String(), "no match before the option line completes")
 	pr.Write([]byte(trustPromptRaw[split:])) //nolint:errcheck
 
 	assert.Equal(t, "\r", stdin.String(), "fires once buffer accumulates the full prompt")
+}
+
+// Guards the timing regression: the headline and descriptive text alone must
+// not trigger acceptance. We only press Enter once the interactive menu option
+// has rendered — otherwise the keystroke lands on a half-drawn dialog and is
+// dropped.
+func TestPromptResponder_DoesNotFireBeforeMenuOption(t *testing.T) {
+	pr, _, stdin := newTestResponder(defaultPromptRules())
+
+	optionAt := strings.Index(trustPromptRaw, "I trust this folder")
+	pr.Write([]byte(trustPromptRaw[:optionAt])) //nolint:errcheck
+	assert.Empty(t, stdin.String(), "headline/description must not trigger acceptance")
+
+	pr.Write([]byte(trustPromptRaw[optionAt:])) //nolint:errcheck
+	assert.Equal(t, "\r", stdin.String(), "accepts once the trust option is on screen")
+}
+
+// lockedBuffer is a goroutine-safe io.Writer for asserting on output that the
+// inject-delay timer writes from a separate goroutine.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func TestPromptResponder_InjectDelayDefersKeystroke(t *testing.T) {
+	out := &bytes.Buffer{}
+	stdin := &lockedBuffer{}
+	pr := newPromptResponder(out, stdin, defaultPromptRules(), 40*time.Millisecond, nil)
+
+	pr.Write([]byte(trustPromptRaw)) //nolint:errcheck
+
+	// The match fired, but the keystroke is held back until the delay elapses.
+	assert.Empty(t, stdin.String(), "keystroke deferred by injectDelay")
+	assert.Eventually(t, func() bool { return stdin.String() == "\r" },
+		time.Second, 5*time.Millisecond, "keystroke injected after the delay")
 }
 
 func TestPromptResponder_EmptyRulesBypass(t *testing.T) {

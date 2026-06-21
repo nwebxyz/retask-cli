@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ansiRE matches CSI escape sequences (colors, cursor moves, screen clears) and
@@ -27,18 +28,30 @@ type rule struct {
 // startup folder-trust dialog.
 func defaultPromptRules() []rule {
 	return []rule{
-		// Claude Code startup trust dialog: "Quick safety check: Is this a
-		// project you created or one you trust?". Match on the headline question
-		// rather than the surrounding descriptive text — that text has changed
-		// between releases (it once read "...read, edit, and execute files
-		// here."), but the question itself is stable. Accept the highlighted
-		// default option ("Yes, proceed") with Enter.
-		{name: "claude-trust", match: "is this a project you created or one you trust", send: "\r"},
+		// Claude Code startup trust dialog ("Quick safety check: Is this a
+		// project you created or one you trust?"). Anchor on the affirmative
+		// menu option ("...I trust this folder"), NOT the headline or
+		// descriptive text: the option is the last thing the TUI renders, so a
+		// match means the interactive menu is fully on screen and ready for
+		// input. Matching earlier text fires Enter against a half-drawn dialog
+		// and the keystroke is dropped. The descriptive copy has also churned
+		// across releases (it once read "...read, edit, and execute files
+		// here."), whereas the option label is stable. Accept the highlighted
+		// default with Enter.
+		{name: "claude-trust", match: "trust this folder", send: "\r"},
 	}
 }
 
 // promptBufferCap bounds the rolling window kept over recent PTY output.
 const promptBufferCap = 8 << 10 // 8 KiB
+
+// defaultInjectDelay is how long to wait after detecting a prompt before
+// injecting the accept keystroke. Agent TUIs (e.g. Claude Code, built on Ink)
+// stream a prompt over several render frames and only attach their keypress
+// handler once the interactive menu mounts; an Enter sent the instant the match
+// text appears can land on a half-drawn frame and be dropped. A short delay lets
+// the stable, input-ready frame settle first. Invisible to a human operator.
+const defaultInjectDelay = 500 * time.Millisecond
 
 // promptResponder wraps a PTY output writer. It passes all output through
 // unaltered while scanning a rolling, normalized window for known prompts; when
@@ -46,17 +59,18 @@ const promptBufferCap = 8 << 10 // 8 KiB
 // rule (fire-once). Once no rules remain it degrades to a transparent
 // pass-through with no scanning overhead.
 type promptResponder struct {
-	inner io.Writer    // real output sink (e.g. wsWriter)
-	stdin io.Writer    // PTY stdin, where accept keystrokes are injected
-	log   *slog.Logger // optional
+	inner       io.Writer     // real output sink (e.g. wsWriter)
+	stdin       io.Writer     // PTY stdin, where accept keystrokes are injected
+	log         *slog.Logger  // optional
+	injectDelay time.Duration // wait before injecting an accept keystroke (0 = immediate)
 
 	mu    sync.Mutex
 	rules []rule
 	buf   []byte
 }
 
-func newPromptResponder(inner, stdin io.Writer, rules []rule, log *slog.Logger) *promptResponder {
-	return &promptResponder{inner: inner, stdin: stdin, log: log, rules: rules}
+func newPromptResponder(inner, stdin io.Writer, rules []rule, injectDelay time.Duration, log *slog.Logger) *promptResponder {
+	return &promptResponder{inner: inner, stdin: stdin, log: log, injectDelay: injectDelay, rules: rules}
 }
 
 // Write passes p through to the inner writer unaltered, then (while rules
@@ -96,7 +110,19 @@ func (pr *promptResponder) Write(p []byte) (n int, err error) {
 	return n, err
 }
 
+// inject delivers a fired rule's accept keystrokes. The rule is already
+// deregistered by the caller, so it never double-fires. When injectDelay is set
+// the write is deferred to a timer goroutine (see defaultInjectDelay) so the
+// agent's TUI has settled on its input-ready frame before the keystroke lands.
 func (pr *promptResponder) inject(r rule) {
+	if pr.injectDelay > 0 {
+		time.AfterFunc(pr.injectDelay, func() { pr.writeAccept(r) })
+		return
+	}
+	pr.writeAccept(r)
+}
+
+func (pr *promptResponder) writeAccept(r rule) {
 	if _, err := pr.stdin.Write([]byte(r.send)); err != nil {
 		if pr.log != nil {
 			pr.log.Error("prompt_autorespond_failed", "rule", r.name, "error", err)

@@ -143,7 +143,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		// folder-trust dialog) and inject the accept keystroke, so unattended
 		// sessions don't stall waiting for a human. Degrades to pass-through
 		// once every rule has fired.
-		out = newPromptResponder(out, r.StdinWriter(), defaultPromptRules(), sm.log)
+		out = newPromptResponder(out, r.StdinWriter(), defaultPromptRules(), defaultInjectDelay, sm.log)
 	}
 	r.SetOutput(out)
 	go func() {
