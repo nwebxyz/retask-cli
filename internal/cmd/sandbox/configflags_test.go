@@ -95,3 +95,48 @@ func TestParseShutdownPolicy(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestBuildConfig(t *testing.T) {
+	t.Run("nil when nothing set", func(t *testing.T) {
+		cfg, err := buildConfig("", nil, nil, "", "", "", nil)
+		require.NoError(t, err)
+		assert.Nil(t, cfg)
+	})
+	t.Run("builds config from flags", func(t *testing.T) {
+		cfg, err := buildConfig(
+			"",
+			[]string{"FOO=bar"},
+			[]string{"url=https://github.com/org/repo,branch=dev"},
+			"echo startup",
+			"echo init",
+			"ON_IDLE",
+			[]string{"github", "slack"},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, cfg)
+		require.Len(t, cfg.EnvVars, 1)
+		assert.Equal(t, "FOO", cfg.EnvVars[0].Key)
+		assert.Equal(t, "bar", cfg.EnvVars[0].Plain)
+		require.Len(t, cfg.GitRepos, 1)
+		assert.Equal(t, "https://github.com/org/repo", cfg.GitRepos[0].Url)
+		assert.Equal(t, "dev", cfg.GitRepos[0].Branch)
+		assert.Equal(t, "echo startup", cfg.StartupCommand)
+		assert.Equal(t, "echo init", cfg.SessionInitCommand)
+		assert.Equal(t, int32(1), int32(cfg.ShutdownPolicy)) // ON_IDLE
+		assert.Equal(t, []string{"github", "slack"}, cfg.IntegrationProviderIds)
+	})
+	t.Run("template id with config flag errors", func(t *testing.T) {
+		_, err := buildConfig("tmpl_abc", []string{"FOO=bar"}, nil, "", "", "", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "--template-id")
+	})
+	t.Run("template id alone is fine (no config)", func(t *testing.T) {
+		cfg, err := buildConfig("tmpl_abc", nil, nil, "", "", "", nil)
+		require.NoError(t, err)
+		assert.Nil(t, cfg)
+	})
+	t.Run("propagates field parse errors", func(t *testing.T) {
+		_, err := buildConfig("", []string{"NOEQUALS"}, nil, "", "", "", nil)
+		require.Error(t, err)
+	})
+}

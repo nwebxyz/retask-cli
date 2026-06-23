@@ -65,3 +65,56 @@ func parseShutdownPolicy(s string) (sandboxv1.Sandbox_Config_ShutdownPolicy, err
 	}
 	return sandboxv1.Sandbox_Config_ShutdownPolicy(v), nil
 }
+
+// buildConfig assembles a *Sandbox_Config from the create flags. It returns
+// (nil, nil) when no config flag was set, so callers leave Sandbox.Config empty
+// and preserve the bare-sandbox behavior.
+//
+// A config flag is "set" when its value is non-zero (non-empty slice or
+// non-empty string). When templateID is non-empty, it is mutually exclusive
+// with every config flag: the server forks the template's config on create, so
+// config must be empty.
+func buildConfig(
+	templateID string,
+	env, gitRepos []string,
+	startupCmd, sessionInitCmd, shutdownPolicy string,
+	integrationIDs []string,
+) (*sandboxv1.Sandbox_Config, error) {
+	hasConfig := len(env) > 0 || len(gitRepos) > 0 || startupCmd != "" ||
+		sessionInitCmd != "" || shutdownPolicy != "" || len(integrationIDs) > 0
+	if !hasConfig {
+		return nil, nil
+	}
+	if templateID != "" {
+		return nil, fmt.Errorf("cannot combine --template-id with config flags " +
+			"(--env, --git-repo, --startup-command, --session-init-command, " +
+			"--shutdown-policy, --integration-provider-id); the template's config is forked instead")
+	}
+
+	cfg := &sandboxv1.Sandbox_Config{}
+	for _, e := range env {
+		ev, err := parseEnvVar(e)
+		if err != nil {
+			return nil, err
+		}
+		cfg.EnvVars = append(cfg.EnvVars, ev)
+	}
+	for _, g := range gitRepos {
+		repo, err := parseGitRepo(g)
+		if err != nil {
+			return nil, err
+		}
+		cfg.GitRepos = append(cfg.GitRepos, repo)
+	}
+	cfg.StartupCommand = startupCmd
+	cfg.SessionInitCommand = sessionInitCmd
+	if shutdownPolicy != "" {
+		p, err := parseShutdownPolicy(shutdownPolicy)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ShutdownPolicy = p
+	}
+	cfg.IntegrationProviderIds = integrationIDs
+	return cfg, nil
+}
