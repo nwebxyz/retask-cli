@@ -73,12 +73,13 @@ nil and a bare sandbox is created.
   - `parseEnvVar(s string) (*sandboxv1.Sandbox_Config_EnvVar, error)`
   - `parseGitRepo(s string) (*integrationv1.GitRepo, error)`
   - `parseShutdownPolicy(s string) (sandboxv1.Sandbox_Config_ShutdownPolicy, error)`
-  - `buildConfig(cmd *cobra.Command, templateID string, env, gitRepos []string, startupCmd, sessionInitCmd, shutdownPolicy string, integrationIDs []string) (*sandboxv1.Sandbox_Config, error)`
-    — assembles the `Config`, returns `(nil, nil)` when no config flag changed,
-    and is the single place that enforces both field-level validation and the
-    `--template-id` conflict. It takes `templateID` so the conflict
-    (`templateID != ""` together with any config flag set) is detected and
-    unit-tested here rather than in the cobra command.
+  - `buildConfig(templateID string, env, gitRepos []string, startupCmd, sessionInitCmd, shutdownPolicy string, integrationIDs []string) (*sandboxv1.Sandbox_Config, error)`
+    — a pure function (no `*cobra.Command` dependency, so it is trivially
+    unit-testable). It treats a config flag as "set" when its value is
+    non-zero (non-empty slice or non-empty string; `--shutdown-policy` defaults
+    to `""`). Returns `(nil, nil)` when no config value is set. It is the single
+    place that enforces both field-level validation and the `--template-id`
+    conflict (`templateID != ""` together with any config value set).
 - `newCreateCommand` in `command.go` wires the new flags and calls
   `buildConfig`, passing `templateID` through. This keeps the already-large
   `command.go` (~575 lines) from growing further with parsing logic.
