@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -137,15 +136,14 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	sm.sessions[sessionID] = r
 	sm.mu.Unlock()
 
-	var out io.Writer = &wsWriter{ctx: ctx, conn: wsConn}
+	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 	if sm.autoRespond {
-		// Watch the PTY stream for known startup prompts (e.g. Claude Code's
-		// folder-trust dialog) and inject the accept keystroke, so unattended
-		// sessions don't stall waiting for a human. Degrades to pass-through
-		// once every rule has fired.
-		out = newPromptResponder(out, r.StdinWriter(), defaultPromptRules(), defaultInjectDelay, sm.log)
+		// Watch the session's rendered screen (via the emulator) for known
+		// startup prompts (e.g. Claude Code's folder-trust dialog) and inject
+		// the accept keystroke once, so unattended sessions don't stall waiting
+		// for a human. Stops once every rule has fired or the watch window ends.
+		go newPromptWatcher(r.Lines, r.StdinWriter(), defaultPromptRules(), defaultPollInterval, defaultPromptWindow, sm.log).Run(ctx)
 	}
-	r.SetOutput(out)
 	go func() {
 		err := sm.readLoop(ctx, wsConn, r, sessionID)
 		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
