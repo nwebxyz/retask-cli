@@ -28,6 +28,24 @@ import (
 	sandboxv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1/sandboxv1connect"
 )
 
+// Session PTY defaults. Sessions start at a generously sized, conventional
+// terminal so the agent's TUI (e.g. Claude Code's trust dialog) renders fully
+// for the screen watcher to detect; a 90-row height keeps the whole startup
+// render on screen. A later session_resize from an attached client corrects the
+// size, which now also moves the emulator (agentfleet >= v0.6.27).
+const (
+	sessionPTYCols = 80
+	sessionPTYRows = 90
+)
+
+// sessionAgentConfig returns the agentfleet AgentConfig used for session PTYs.
+func sessionAgentConfig() agentfleet.AgentConfig {
+	a := agentfleet.DefaultConfig().Agent
+	a.PTYCols = sessionPTYCols
+	a.PTYRows = sessionPTYRows
+	return a
+}
+
 func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
 	var autoOpen bool
@@ -126,6 +144,7 @@ Environment:
 
 			// agentfleet config.
 			fleetCfg := agentfleet.DefaultConfig()
+			fleetCfg.Agent = sessionAgentConfig()
 			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
 			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
 			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_SANDBOX_AUTO_OPEN_SESSION") == "1"

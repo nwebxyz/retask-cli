@@ -90,3 +90,9 @@ func TestWsWriterWrite(t *testing.T) {
 		t.Fatal("timeout: server did not receive message")
 	}
 }
+
+func TestSessionAgentConfig_Is80x90(t *testing.T) {
+	a := sessionAgentConfig()
+	assert.Equal(t, 80, a.PTYCols, "session terminal width")
+	assert.Equal(t, 90, a.PTYRows, "session terminal height")
+}
