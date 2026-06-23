@@ -122,7 +122,7 @@ func buildManifest() manifest {
 			{Command: "retask project-config set", Description: "Update Retask project config", Flags: []string{"--task-statuses", "--task-types", "--default-view"}, Example: "retask project-config set <project-id> --default-view TASK_VIEW_KANBAN"},
 			{Command: "retask sandbox list", Description: "List sandboxes", Flags: []string{"--status", "--type"}, Example: "retask sandbox list --type PRIVATE"},
 			{Command: "retask sandbox get", Description: "Get a sandbox by ID", Example: "retask sandbox get <sandbox-id>"},
-			{Command: "retask sandbox create", Description: "Create a sandbox", Flags: []string{"--name", "--type", "--template-id"}, Example: "retask sandbox create --name my-sandbox --type CLOUD"},
+			{Command: "retask sandbox create", Description: "Create a sandbox. Custom config via --env/--git-repo/--startup-command/--session-init-command/--shutdown-policy/--integration-provider-id, all mutually exclusive with --template-id", Flags: []string{"--name", "--type", "--template-id", "--env", "--git-repo", "--startup-command", "--session-init-command", "--shutdown-policy", "--integration-provider-id"}, Example: "retask sandbox create --name my-sandbox --session-init-command 'claude --append-system-prompt \"$SYSTEM_PROMPT\" --dangerously-skip-permissions'"},
 			{Command: "retask sandbox update", Description: "Update a sandbox", Flags: []string{"--name"}, Example: "retask sandbox update <id> --name new-name"},
 			{Command: "retask sandbox stop", Description: "Stop a running sandbox", Example: "retask sandbox stop <sandbox-id>"},
 			{Command: "retask sandbox delete", Description: "Delete a sandbox", Example: "retask sandbox delete <sandbox-id>"},
