@@ -152,6 +152,8 @@ Output fields: sandbox_id, workspace_id, name, type, status, config, created_at,
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
 	var name, templateID, sandboxType string
+	var env, gitRepos, integrationIDs []string
+	var startupCmd, sessionInitCmd, shutdownPolicy string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new sandbox",
@@ -161,11 +163,21 @@ Usage examples:
   retask sandbox create --name "My Sandbox"
   retask sandbox create --name "My Sandbox" --type PRIVATE
   retask sandbox create --name "My Sandbox" --template-id tmpl_abc123
+  retask sandbox create --name "My Sandbox" --env KEY=VALUE --git-repo url=https://github.com/org/repo
+  retask sandbox create --name "My Sandbox" --session-init-command 'claude --append-system-prompt "$SYSTEM_PROMPT" --dangerously-skip-permissions'
 
 Flags:
-  --name string           Required. Sandbox name
-  --type string           Optional. Sandbox type: CLOUD, PRIVATE (default CLOUD)
-  --template-id string    Optional. Source template ID to fork config from
+  --name string                      Required. Sandbox name
+  --type string                      Optional. Sandbox type: CLOUD, PRIVATE (default CLOUD)
+  --template-id string               Optional. Source template ID to fork config from.
+                                     Mutually exclusive with the config flags below.
+  --env KEY=VALUE                    Optional, repeatable. Plain env var (value may contain '=').
+  --git-repo url=...[,branch=...][,dir=...]
+                                     Optional, repeatable. Repo cloned at session start.
+  --startup-command string           Optional. Command run at sandbox startup.
+  --session-init-command string      Optional. Command run at each session start.
+  --shutdown-policy string           Optional. Values: ON_IDLE_NO_USER_ACTIONS, ON_IDLE, NEVER
+  --integration-provider-id string   Optional, repeatable/comma-separated. Integration provider ID.
 
 Output fields: sandbox_id`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -188,6 +200,12 @@ Output fields: sandbox_id`,
 				sandbox.Type = sandboxv1.Sandbox_Type(v)
 			}
 
+			cfg, err := buildConfig(templateID, env, gitRepos, startupCmd, sessionInitCmd, shutdownPolicy, integrationIDs)
+			if err != nil {
+				return err
+			}
+			sandbox.Config = cfg
+
 			svc, close, err := connect(gf)
 			if err != nil {
 				return err
@@ -202,7 +220,13 @@ Output fields: sandbox_id`,
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Sandbox name (required)")
 	cmd.Flags().StringVar(&sandboxType, "type", "", "Sandbox type: CLOUD, PRIVATE (default CLOUD)")
-	cmd.Flags().StringVar(&templateID, "template-id", "", "Source template ID to fork config from")
+	cmd.Flags().StringVar(&templateID, "template-id", "", "Source template ID to fork config from (mutually exclusive with config flags)")
+	cmd.Flags().StringArrayVar(&env, "env", nil, "Plain env var KEY=VALUE (repeatable)")
+	cmd.Flags().StringArrayVar(&gitRepos, "git-repo", nil, "Git repo url=...[,branch=...][,dir=...] (repeatable)")
+	cmd.Flags().StringVar(&startupCmd, "startup-command", "", "Command run at sandbox startup")
+	cmd.Flags().StringVar(&sessionInitCmd, "session-init-command", "", "Command run at each session start")
+	cmd.Flags().StringVar(&shutdownPolicy, "shutdown-policy", "", "Shutdown policy: ON_IDLE_NO_USER_ACTIONS, ON_IDLE, NEVER")
+	cmd.Flags().StringSliceVar(&integrationIDs, "integration-provider-id", nil, "Integration provider ID (repeatable or comma-separated)")
 	return cmd
 }
 

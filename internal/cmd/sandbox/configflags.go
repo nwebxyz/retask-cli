@@ -1,0 +1,120 @@
+// internal/cmd/sandbox/configflags.go
+package sandbox
+
+import (
+	"fmt"
+	"strings"
+
+	integrationv1 "github.com/nwebxyz/retask-cli/proto-gen/integration/v1"
+	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
+)
+
+// parseEnvVar parses a "KEY=VALUE" string into a plain (non-secret) env var.
+// Only the first '=' separates key from value, so values may contain '='.
+func parseEnvVar(s string) (*sandboxv1.Sandbox_Config_EnvVar, error) {
+	key, value, found := strings.Cut(s, "=")
+	if !found {
+		return nil, fmt.Errorf("invalid --env %q: expected KEY=VALUE", s)
+	}
+	if key == "" {
+		return nil, fmt.Errorf("invalid --env %q: empty key", s)
+	}
+	return &sandboxv1.Sandbox_Config_EnvVar{Key: key, Plain: value}, nil
+}
+
+// parseGitRepo parses a comma-separated key=value spec into a GitRepo.
+// Required key: url. Optional keys: branch, dir (maps to target_dir).
+// The url value may contain '@' and ':' (SSH URLs), which is why the spec is
+// comma-delimited rather than positional. Example:
+//
+//	url=git@github.com:org/repo.git,branch=dev,dir=src
+func parseGitRepo(s string) (*integrationv1.GitRepo, error) {
+	repo := &integrationv1.GitRepo{}
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, value, found := strings.Cut(part, "=")
+		if !found {
+			return nil, fmt.Errorf("invalid --git-repo segment %q: expected key=value", part)
+		}
+		switch key {
+		case "url":
+			repo.Url = value
+		case "branch":
+			repo.Branch = value
+		case "dir":
+			repo.TargetDir = value
+		default:
+			return nil, fmt.Errorf("invalid --git-repo key %q: valid keys are url, branch, dir", key)
+		}
+	}
+	if repo.Url == "" {
+		return nil, fmt.Errorf("invalid --git-repo %q: url is required", s)
+	}
+	return repo, nil
+}
+
+// parseShutdownPolicy resolves a short policy name (e.g. "ON_IDLE") to the
+// proto enum value (looked up as SHUTDOWN_POLICY_<name>).
+func parseShutdownPolicy(s string) (sandboxv1.Sandbox_Config_ShutdownPolicy, error) {
+	v, ok := sandboxv1.Sandbox_Config_ShutdownPolicy_value["SHUTDOWN_POLICY_"+s]
+	if !ok {
+		return 0, fmt.Errorf("invalid --shutdown-policy %q. Valid values: ON_IDLE_NO_USER_ACTIONS, ON_IDLE, NEVER", s)
+	}
+	return sandboxv1.Sandbox_Config_ShutdownPolicy(v), nil
+}
+
+// buildConfig assembles a *Sandbox_Config from the create flags. It returns
+// (nil, nil) when no config flag was set, so callers leave Sandbox.Config empty
+// and preserve the bare-sandbox behavior.
+//
+// A config flag is "set" when its value is non-zero (non-empty slice or
+// non-empty string). When templateID is non-empty, it is mutually exclusive
+// with every config flag: the server forks the template's config on create, so
+// config must be empty.
+func buildConfig(
+	templateID string,
+	env, gitRepos []string,
+	startupCmd, sessionInitCmd, shutdownPolicy string,
+	integrationIDs []string,
+) (*sandboxv1.Sandbox_Config, error) {
+	hasConfig := len(env) > 0 || len(gitRepos) > 0 || startupCmd != "" ||
+		sessionInitCmd != "" || shutdownPolicy != "" || len(integrationIDs) > 0
+	if !hasConfig {
+		return nil, nil
+	}
+	if templateID != "" {
+		return nil, fmt.Errorf("cannot combine --template-id with config flags " +
+			"(--env, --git-repo, --startup-command, --session-init-command, " +
+			"--shutdown-policy, --integration-provider-id); the template's config is forked instead")
+	}
+
+	cfg := &sandboxv1.Sandbox_Config{}
+	for _, e := range env {
+		ev, err := parseEnvVar(e)
+		if err != nil {
+			return nil, err
+		}
+		cfg.EnvVars = append(cfg.EnvVars, ev)
+	}
+	for _, g := range gitRepos {
+		repo, err := parseGitRepo(g)
+		if err != nil {
+			return nil, err
+		}
+		cfg.GitRepos = append(cfg.GitRepos, repo)
+	}
+	cfg.StartupCommand = startupCmd
+	cfg.SessionInitCommand = sessionInitCmd
+	if shutdownPolicy != "" {
+		p, err := parseShutdownPolicy(shutdownPolicy)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ShutdownPolicy = p
+	}
+	cfg.IntegrationProviderIds = integrationIDs
+	return cfg, nil
+}
