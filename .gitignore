@@ -23,7 +23,7 @@
 /.data
 /*-backup
 api-contracts
-retask
+/retask
 
 # Claude Code
 .worktrees

@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/flags"
 	"github.com/nwebxyz/retask-cli/internal/version"
+	"github.com/spf13/cobra"
 )
 
 func NewCommand(gf *flags.Global) *cobra.Command {
@@ -35,6 +35,18 @@ type commandEntry struct {
 	Description string   `json:"description"`
 	Flags       []string `json:"flags,omitempty"`
 	Example     string   `json:"example"`
+}
+
+// FlagsByCommand returns the documented flags for each command in the manifest,
+// keyed by full command path (e.g. "retask sandbox connect"). Exposed so a test
+// can verify the hand-maintained manifest stays in sync with the command tree.
+func FlagsByCommand() map[string][]string {
+	m := buildManifest()
+	out := make(map[string][]string, len(m.Commands))
+	for _, c := range m.Commands {
+		out[c.Command] = c.Flags
+	}
+	return out
 }
 
 type manifest struct {
@@ -101,32 +113,34 @@ func buildManifest() manifest {
 			{Command: "retask task list", Description: "List tasks. --assignee is repeatable and accepts workspace_member_nrns (format: nweb:workspace:member:<uuid>, obtainable from retask auth whoami or retask workspace member list)", Flags: []string{"--project-id", "--status", "--assignee", "--priority"}, Example: "retask task list --assignee nweb:workspace:member:<uuid1> --assignee nweb:workspace:member:<uuid2>"},
 			{Command: "retask task get", Description: "Get a task by ID", Example: "retask task get <task-id>"},
 			{Command: "retask task get-by-key", Description: "Get a task by key (e.g. ENG-42)", Example: "retask task get-by-key ENG-42"},
-			{Command: "retask task create", Description: "Create a task", Flags: []string{"--project-id", "--title", "--description", "--status", "--priority", "--assignee", "--due-at"}, Example: "retask task create --project-id <id> --title 'Fix bug' --priority HIGH"},
+			{Command: "retask task create", Description: "Create a task", Flags: []string{"--project-id", "--title", "--description", "--priority", "--due-at"}, Example: "retask task create --project-id <id> --title 'Fix bug' --priority HIGH"},
 			{Command: "retask task update", Description: "Partial update a task (only set flags change)", Flags: []string{"--title", "--description", "--status", "--priority", "--assignee", "--due-at"}, Example: "retask task update <id> --status <status-id> --priority HIGH"},
 			{Command: "retask task delete", Description: "Delete a task", Example: "retask task delete <task-id>"},
 			{Command: "retask task attachment add", Description: "Attach a file to a task", Example: "retask task attachment add <task-id> <file-id>"},
 			{Command: "retask task attachment remove", Description: "Remove a file attachment from a task", Example: "retask task attachment remove <task-id> <file-id>"},
 			{Command: "retask project-config get", Description: "Get Retask project config (statuses, types, kanban)", Example: "retask project-config get <project-id>"},
 			{Command: "retask project-config set", Description: "Update Retask project config", Flags: []string{"--task-statuses", "--task-types", "--default-view"}, Example: "retask project-config set <project-id> --default-view TASK_VIEW_KANBAN"},
-			{Command: "retask sandbox list", Description: "List sandboxes", Example: "retask sandbox list"},
+			{Command: "retask sandbox list", Description: "List sandboxes", Flags: []string{"--status", "--type"}, Example: "retask sandbox list --type PRIVATE"},
 			{Command: "retask sandbox get", Description: "Get a sandbox by ID", Example: "retask sandbox get <sandbox-id>"},
-			{Command: "retask sandbox create", Description: "Create a sandbox", Flags: []string{"--name", "--type", "--template-id", "--workspace-id"}, Example: "retask sandbox create --name my-sandbox --type CLOUD"},
+			{Command: "retask sandbox create", Description: "Create a sandbox", Flags: []string{"--name", "--type", "--template-id"}, Example: "retask sandbox create --name my-sandbox --type CLOUD"},
 			{Command: "retask sandbox update", Description: "Update a sandbox", Flags: []string{"--name"}, Example: "retask sandbox update <id> --name new-name"},
 			{Command: "retask sandbox stop", Description: "Stop a running sandbox", Example: "retask sandbox stop <sandbox-id>"},
 			{Command: "retask sandbox delete", Description: "Delete a sandbox", Example: "retask sandbox delete <sandbox-id>"},
-			{Command: "retask sandbox session list", Description: "List sessions", Flags: []string{"--sandbox-id"}, Example: "retask sandbox session list --sandbox-id <sb-id>"},
+			{Command: "retask sandbox session list", Description: "List sessions", Flags: []string{"--sandbox-id", "--status"}, Example: "retask sandbox session list --sandbox-id <sb-id>"},
 			{Command: "retask sandbox session get", Description: "Get a session by ID", Example: "retask sandbox session get <session-id>"},
-			{Command: "retask sandbox session create", Description: "Create a sandbox session", Flags: []string{"--sandbox-id"}, Example: "retask sandbox session create --sandbox-id <sb-id>"},
+			{Command: "retask sandbox session create", Description: "Create a sandbox session", Flags: []string{"--sandbox-id", "--name"}, Example: "retask sandbox session create --sandbox-id <sb-id>"},
 			{Command: "retask sandbox session update", Description: "Partial update a session", Flags: []string{"--name", "--seed-nrn", "--seed-prompt"}, Example: "retask sandbox session update <id> --name \"My Session\""},
 			{Command: "retask sandbox session stop", Description: "Stop a session", Example: "retask sandbox session stop <session-id>"},
 			{Command: "retask sandbox session delete", Description: "Delete a session", Example: "retask sandbox session delete <session-id>"},
-			{Command: "retask sandbox connect", Description: "Connect this machine as a Private VM sandbox (long-running)", Flags: []string{"--mode"}, Example: "retask sandbox connect <sandbox-id> --mode headless"},
+			{Command: "retask sandbox connect", Description: "Connect this machine as a Private VM sandbox (long-running)", Flags: []string{"--mode", "--auto-open", "--no-auto-respond"}, Example: "retask sandbox connect <sandbox-id>"},
+			{Command: "retask sandbox attach", Description: "Attach terminal to a running local session", Example: "retask sandbox attach <session-id>"},
 			{Command: "retask agent list", Description: "List agents", Flags: []string{"--role"}, Example: "retask agent list --role ROLE_TASK_PROCESSOR"},
 			{Command: "retask agent get", Description: "Get an agent by ID", Example: "retask agent get <agent-id>"},
 			{Command: "retask agent create", Description: "Create an agent", Flags: []string{"--name", "--role", "--description", "--sandbox-template-id"}, Example: "retask agent create --name 'Task Bot' --role ROLE_TASK_PROCESSOR"},
 			{Command: "retask agent update", Description: "Update an agent", Flags: []string{"--name", "--role", "--description", "--sandbox-template-id"}, Example: "retask agent update <id> --name 'New Name'"},
 			{Command: "retask agent delete", Description: "Delete an agent", Example: "retask agent delete <agent-id>"},
 			{Command: "retask upgrade", Description: "Upgrade retask to the latest version", Example: "retask upgrade"},
+			{Command: "retask help-llm", Description: "Print machine-readable command manifest for LLM injection", Example: "retask help-llm"},
 		},
 	}
 }

@@ -150,7 +150,7 @@ Output fields: agent_id, workspace_id, name, description, role, sandbox_template
 // ── agent create ──────────────────────────────────────────────────────────────
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
-	var name, role, description, sandboxTemplateID, workspaceID string
+	var name, role, description, sandboxTemplateID string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new agent",
@@ -165,7 +165,6 @@ Flags:
   --role string                 Required. Role: ROLE_UNKNOWN, ROLE_TASK_PLANNER, ROLE_TASK_PROCESSOR
   --description string          Optional description
   --sandbox-template-id string  Optional sandbox template ID
-  --workspace-id string         Optional. Workspace ID (overrides global --workspace-id flag)
 
 Output fields: agent_id`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -181,16 +180,11 @@ Output fields: agent_id`,
 				return err
 			}
 
-			wsID := workspaceID
-			if wsID == "" {
-				wsID = gf.WorkspaceID
-			}
-
 			agent := &agentv1.Agent{
 				Name:        name,
 				Role:        r,
 				Description: description,
-				WorkspaceId: wsID,
+				WorkspaceId: gf.WorkspaceID,
 			}
 			if cmd.Flags().Changed("sandbox-template-id") {
 				agent.SandboxTemplateId = sandboxTemplateID
@@ -212,7 +206,6 @@ Output fields: agent_id`,
 	cmd.Flags().StringVar(&role, "role", "", "Agent role: ROLE_UNKNOWN, ROLE_TASK_PLANNER, ROLE_TASK_PROCESSOR (required)")
 	cmd.Flags().StringVar(&description, "description", "", "Agent description")
 	cmd.Flags().StringVar(&sandboxTemplateID, "sandbox-template-id", "", "Sandbox template ID")
-	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID (overrides global flag and env var)")
 	return cmd
 }
 

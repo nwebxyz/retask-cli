@@ -138,7 +138,7 @@ Output fields: project_id, workspace_id, key, name, description, color, icon, vi
 // ── project create ────────────────────────────────────────────────────────────
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
-	var name, description, visibility, color, icon, workspaceID string
+	var name, description, visibility, color, icon string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new project",
@@ -154,7 +154,6 @@ Flags:
   --visibility string    Visibility: VISIBILITY_WORKSPACE_EDIT, VISIBILITY_WORKSPACE_VIEW, VISIBILITY_RESTRICTED (default: VISIBILITY_WORKSPACE_EDIT)
   --color string         Optional hex color (e.g. #4287f5)
   --icon string          Optional icon identifier
-  --workspace-id string  Optional. Workspace ID (overrides global --workspace-id flag)
 
 Output fields: project_id`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,17 +161,12 @@ Output fields: project_id`,
 				return fmt.Errorf("--name is required")
 			}
 
-			wsID := workspaceID
-			if wsID == "" {
-				wsID = gf.WorkspaceID
-			}
-
 			proj := &projectv1.Project{
 				Name:        name,
 				Description: description,
 				Color:       color,
 				Icon:        icon,
-				WorkspaceId: wsID,
+				WorkspaceId: gf.WorkspaceID,
 			}
 
 			if cmd.Flags().Changed("visibility") {
@@ -200,7 +194,6 @@ Output fields: project_id`,
 	cmd.Flags().StringVar(&visibility, "visibility", "", "Visibility: VISIBILITY_WORKSPACE_EDIT, VISIBILITY_WORKSPACE_VIEW, VISIBILITY_RESTRICTED")
 	cmd.Flags().StringVar(&color, "color", "", "Project color (hex, e.g. #4287f5)")
 	cmd.Flags().StringVar(&icon, "icon", "", "Project icon identifier")
-	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID (overrides global flag and env var)")
 	return cmd
 }
 

@@ -157,13 +157,12 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 // ── task get-by-key ───────────────────────────────────────────────────────────
 
 func newGetByKeyCommand(gf *flags.Global) *cobra.Command {
-	var workspaceID string
 	cmd := &cobra.Command{
 		Use:   "get-by-key <key>",
 		Short: "Get a task by its key",
 		Long: `Fetch a single task by its human-readable key (e.g. PROJ-42).
 
-The workspace ID is required and can be provided via --workspace-id flag or NWEB_WORKSPACE_ID env var.
+The workspace ID is required and can be provided via the global --workspace-id flag or NWEB_WORKSPACE_ID env var.
 
 Usage example:
   retask task get-by-key PROJ-42
@@ -172,11 +171,7 @@ Usage example:
 Output fields: task_id, project_id, workspace_id, key, title, description, priority, status, due_at, assignee_nrns, created_at, updated_at`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			wsID := workspaceID
-			if wsID == "" {
-				wsID = gf.WorkspaceID
-			}
-			if wsID == "" {
+			if gf.WorkspaceID == "" {
 				return fmt.Errorf("--workspace-id is required (or set NWEB_WORKSPACE_ID)")
 			}
 
@@ -186,7 +181,7 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 			}
 			defer close()
 			resp, err := svc.GetTaskByKey(context.Background(), connectrpc.NewRequest(&taskv1.TaskByKeyRequest{
-				WorkspaceId: wsID,
+				WorkspaceId: gf.WorkspaceID,
 				Key:         args[0],
 			}))
 			if err != nil {
@@ -195,7 +190,6 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 			return output.Print(gf.Pretty, resp.Msg)
 		},
 	}
-	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID (overrides global flag and env var)")
 	return cmd
 }
 
