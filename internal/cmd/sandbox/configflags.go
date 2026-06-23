@@ -55,3 +55,13 @@ func parseGitRepo(s string) (*integrationv1.GitRepo, error) {
 	}
 	return repo, nil
 }
+
+// parseShutdownPolicy resolves a short policy name (e.g. "ON_IDLE") to the
+// proto enum value (looked up as SHUTDOWN_POLICY_<name>).
+func parseShutdownPolicy(s string) (sandboxv1.Sandbox_Config_ShutdownPolicy, error) {
+	v, ok := sandboxv1.Sandbox_Config_ShutdownPolicy_value["SHUTDOWN_POLICY_"+s]
+	if !ok {
+		return 0, fmt.Errorf("invalid --shutdown-policy %q. Valid values: ON_IDLE_NO_USER_ACTIONS, ON_IDLE, NEVER", s)
+	}
+	return sandboxv1.Sandbox_Config_ShutdownPolicy(v), nil
+}

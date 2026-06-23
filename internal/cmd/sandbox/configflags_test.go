@@ -76,3 +76,22 @@ func TestParseGitRepo(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestParseShutdownPolicy(t *testing.T) {
+	t.Run("valid values", func(t *testing.T) {
+		cases := map[string]int32{
+			"ON_IDLE_NO_USER_ACTIONS": 0,
+			"ON_IDLE":                 1,
+			"NEVER":                   2,
+		}
+		for in, want := range cases {
+			p, err := parseShutdownPolicy(in)
+			require.NoError(t, err, in)
+			assert.Equal(t, want, int32(p), in)
+		}
+	})
+	t.Run("invalid value errors", func(t *testing.T) {
+		_, err := parseShutdownPolicy("SOMETIMES")
+		require.Error(t, err)
+	})
+}
