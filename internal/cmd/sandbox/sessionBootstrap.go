@@ -302,16 +302,16 @@ func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *webs
 		cmd := exec.CommandContext(ctx, "git", "-C", dest, "fetch", "--depth=1", "origin", branch)
 		cmd.Env = append(os.Environ(), tokenEnv...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			b.logError("session_repo_fetch_failed", "dest", dest, "error", err)
+			b.logError("session_repo_fetch_failed", "session_id", b.SessionID, "dest", dest, "error", err)
 			return fmt.Errorf("fetch %s: %w\n%s", dest, err, strings.TrimSpace(string(out)))
 		}
 		cmd = exec.CommandContext(ctx, "git", "-C", dest, "reset", "--hard", "FETCH_HEAD")
 		if out, err := cmd.CombinedOutput(); err != nil {
-			b.logError("session_repo_reset_failed", "dest", dest, "error", err)
+			b.logError("session_repo_reset_failed", "session_id", b.SessionID, "dest", dest, "error", err)
 			return fmt.Errorf("reset %s: %w\n%s", dest, err, strings.TrimSpace(string(out)))
 		}
 		writeTerm(ctx, conn, fmt.Sprintf("[repos] updated %s\r\n", dest))
-		b.logInfo("session_repo_updated", "dest", dest)
+		b.logInfo("session_repo_updated", "session_id", b.SessionID, "dest", dest)
 		return nil
 	}
 	var lastErr error
@@ -322,11 +322,11 @@ func (b *SessionBootstrap) cloneOrFetchWithRetry(ctx context.Context, conn *webs
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			writeTerm(ctx, conn, fmt.Sprintf("[repos] cloned %s\r\n", dest))
-			b.logInfo("session_repo_cloned", "dest", dest)
+			b.logInfo("session_repo_cloned", "session_id", b.SessionID, "dest", dest)
 			return nil
 		}
 		lastErr = fmt.Errorf("%w\n%s", err, strings.TrimSpace(string(out)))
-		b.logError("session_repo_clone_failed", "dest", dest, "attempt", attempt, "error", err)
+		b.logError("session_repo_clone_failed", "session_id", b.SessionID, "dest", dest, "attempt", attempt, "error", err)
 		writeTerm(ctx, conn, fmt.Sprintf("[repos] attempt %d failed: %v\r\n", attempt, err))
 		if attempt < 3 {
 			time.Sleep(time.Second)

@@ -147,7 +147,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}
 	r.SetOutput(out)
 	go func() {
-		err := sm.readLoop(ctx, wsConn, r)
+		err := sm.readLoop(ctx, wsConn, r, sessionID)
 		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
 		r.Stop() //nolint:errcheck
 	}()
@@ -163,7 +163,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}()
 }
 
-func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner) error {
+func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner, sessionID string) error {
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
@@ -186,6 +186,7 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			}
 			r.StdinWriter().Write(b) //nolint:errcheck
 		case "resize":
+			sm.logInfo("session_resize", "session_id", sessionID, "rows", msg.Rows, "cols", msg.Cols)
 			r.Resize(msg.Rows, msg.Cols) //nolint:errcheck
 		}
 	}
