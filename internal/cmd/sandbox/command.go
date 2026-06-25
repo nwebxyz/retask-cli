@@ -164,7 +164,7 @@ Usage examples:
   retask sandbox create --name "My Sandbox" --type PRIVATE
   retask sandbox create --name "My Sandbox" --template-id tmpl_abc123
   retask sandbox create --name "My Sandbox" --env KEY=VALUE --git-repo url=https://github.com/org/repo
-  retask sandbox create --name "My Sandbox" --session-init-command 'claude --append-system-prompt "$SYSTEM_PROMPT" --dangerously-skip-permissions'
+  retask sandbox create --name "My Sandbox" --session-init-command 'claude --dangerously-skip-permissions "$SEED_PROMPT"'
 
 Flags:
   --name string                      Required. Sandbox name
