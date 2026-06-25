@@ -196,22 +196,32 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 // ── task create ───────────────────────────────────────────────────────────────
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
-	var projectID, title, description, priority, dueAt string
+	var projectID, title, description, priority, dueAt, parentTaskID, reporter string
+	var assignees []string
+	var estimationPoints uint32
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new task",
 		Long: `Create a new task in a project.
 
+The workspace ID is required and can be provided via the global --workspace-id flag or NWEB_WORKSPACE_ID env var.
+
 Usage examples:
   retask task create --project-id proj_abc123 --title "Fix login bug"
   retask task create --project-id proj_abc123 --title "New feature" --priority HIGH --due-at "2026-12-31T00:00:00Z"
+  retask task create --project-id proj_abc123 --title "Subtask" --parent-task-id task_abc123
+  retask task create --project-id proj_abc123 --title "Assigned" --assignee nweb:workspace:member:<uuid>
 
 Flags:
-  --project-id string    Required. Project ID to create the task in
-  --title string         Required. Task title
-  --description string   Optional task description
-  --priority string      Priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
-  --due-at string        Due date in RFC3339 format (e.g. 2026-12-31T00:00:00Z)
+  --project-id string        Required. Project ID to create the task in
+  --title string             Required. Task title
+  --description string       Optional task description. Accepts simple HTML (e.g. <p>, <b>, <ul>, <li>, <a>)
+  --priority string          Priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
+  --due-at string            Due date in RFC3339 format (e.g. 2026-12-31T00:00:00Z)
+  --parent-task-id string    Parent task ID — makes this a subtask of that task
+  --assignee string          Assignee member NRN (repeatable, format: nweb:workspace:member:<uuid>)
+  --reporter string          Reporter member NRN (format: nweb:workspace:member:<uuid>). Defaults to the creator
+  --estimation-points uint   Effort estimate in points (0 = unestimated)
 
 Output fields: task_id`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -221,11 +231,16 @@ Output fields: task_id`,
 			if title == "" {
 				return fmt.Errorf("--title is required")
 			}
+			if gf.WorkspaceID == "" {
+				return fmt.Errorf("--workspace-id is required (or set NWEB_WORKSPACE_ID)")
+			}
 
 			task := &taskv1.Task{
-				ProjectId:   projectID,
-				Title:       title,
-				Description: description,
+				ProjectId:        projectID,
+				WorkspaceId:      gf.WorkspaceID,
+				Title:            title,
+				Description:      description,
+				EstimationPoints: estimationPoints,
 			}
 
 			if cmd.Flags().Changed("priority") {
@@ -244,6 +259,31 @@ Output fields: task_id`,
 				task.DueAt = ts
 			}
 
+			if parentTaskID != "" {
+				task.ParentNrn = &commonv1.Nrn{
+					Domain:       "nweb",
+					Service:      "retask-task",
+					ResourceType: "task",
+					ResourceId:   parentTaskID,
+				}
+			}
+
+			for _, a := range assignees {
+				nrn, err := parseNrn(a)
+				if err != nil {
+					return fmt.Errorf("invalid --assignee: %w", err)
+				}
+				task.AssigneeNrns = append(task.AssigneeNrns, nrn)
+			}
+
+			if reporter != "" {
+				nrn, err := parseNrn(reporter)
+				if err != nil {
+					return fmt.Errorf("invalid --reporter: %w", err)
+				}
+				task.ReporterNrn = nrn
+			}
+
 			svc, close, err := connect(gf)
 			if err != nil {
 				return err
@@ -258,9 +298,13 @@ Output fields: task_id`,
 	}
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Project ID (required)")
 	cmd.Flags().StringVar(&title, "title", "", "Task title (required)")
-	cmd.Flags().StringVar(&description, "description", "", "Task description")
+	cmd.Flags().StringVar(&description, "description", "", "Task description (accepts simple HTML)")
 	cmd.Flags().StringVar(&priority, "priority", "", "Priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT")
 	cmd.Flags().StringVar(&dueAt, "due-at", "", "Due date in RFC3339 format (e.g. 2026-12-31T00:00:00Z)")
+	cmd.Flags().StringVar(&parentTaskID, "parent-task-id", "", "Parent task ID (makes this a subtask)")
+	cmd.Flags().StringArrayVar(&assignees, "assignee", nil, "Assignee member NRN (repeatable, format: nweb:workspace:member:<uuid>)")
+	cmd.Flags().StringVar(&reporter, "reporter", "", "Reporter member NRN (format: nweb:workspace:member:<uuid>)")
+	cmd.Flags().Uint32Var(&estimationPoints, "estimation-points", 0, "Effort estimate in points (0 = unestimated)")
 	return cmd
 }
 
