@@ -3,7 +3,9 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	connectrpc "connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -311,7 +313,9 @@ Output fields: task_id`,
 // ── task update ───────────────────────────────────────────────────────────────
 
 func newUpdateCommand(gf *flags.Global) *cobra.Command {
-	var title, description, priority, statusID, assigneeNrn, dueAt string
+	var title, description, priority, statusID, dueAt, taskType, parentTaskID, reporter string
+	var assignees []string
+	var estimationPoints uint32
 	cmd := &cobra.Command{
 		Use:   "update <task-id>",
 		Short: "Update an existing task",
@@ -320,14 +324,22 @@ func newUpdateCommand(gf *flags.Global) *cobra.Command {
 Usage examples:
   retask task update task_abc123 --title "Updated title"
   retask task update task_abc123 --priority URGENT --due-at "2026-12-31T00:00:00Z"
+  retask task update task_abc123 --status status_done --task-type type_bug
+  retask task update task_abc123 --assignee nweb:workspace:member:<uuid> --assignee nweb:workspace:member:<uuid2>
+  retask task update task_abc123 --parent-task-id task_parent123
+  retask task update task_abc123 --parent-task-id ""   # clear parent
 
 Flags:
-  --title string         New task title
-  --description string   New description
-  --priority string      New priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
-  --status string        New status ID
-  --assignee string      New assignee NRN (e.g. nweb:workspace:member:<uuid>)
-  --due-at string        New due date in RFC3339 format
+  --title string             New task title
+  --description string       New description (accepts simple HTML)
+  --priority string          New priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
+  --status string            New status ID (must exist in the project's statuses)
+  --task-type string         New task type ID (must exist in the project's task types)
+  --assignee string          Assignee member NRN (repeatable; replaces all assignees; pass empty to clear)
+  --parent-task-id string    Parent task ID (empty string clears the parent)
+  --reporter string          Reporter member NRN (empty string clears it)
+  --estimation-points uint   Effort estimate in points (0 = unestimated)
+  --due-at string            New due date in RFC3339 format
 
 Output fields: task_id`,
 		Args: cobra.ExactArgs(1),
@@ -341,17 +353,57 @@ Output fields: task_id`,
 				data["description"] = description
 			}
 			if cmd.Flags().Changed("priority") {
-				_, ok := taskv1.Task_Priority_value[priority]
+				v, ok := taskv1.Task_Priority_value[priority]
 				if !ok {
 					return fmt.Errorf("invalid --priority %q. Valid values: UNKNOWN, LOW, MEDIUM, HIGH, URGENT", priority)
 				}
-				data["priority"] = priority
+				data["priority"] = strconv.Itoa(int(v))
 			}
 			if cmd.Flags().Changed("status") {
-				data["status_id"] = statusID
+				data["status.status_id"] = statusID
+			}
+			if cmd.Flags().Changed("task-type") {
+				data["task_type.type_id"] = taskType
 			}
 			if cmd.Flags().Changed("assignee") {
-				data["assignee_nrn"] = assigneeNrn
+				// assignee_nrns is a JSON array of full NRN strings; an empty
+				// array clears all assignees. Empty entries are dropped so
+				// `--assignee ""` clears.
+				nrns := []string{}
+				for _, a := range assignees {
+					if a == "" {
+						continue
+					}
+					if _, err := parseNrn(a); err != nil {
+						return fmt.Errorf("invalid --assignee: %w", err)
+					}
+					nrns = append(nrns, a)
+				}
+				encoded, err := json.Marshal(nrns)
+				if err != nil {
+					return fmt.Errorf("encoding assignees: %w", err)
+				}
+				data["assignee_nrns"] = string(encoded)
+			}
+			if cmd.Flags().Changed("parent-task-id") {
+				if parentTaskID == "" {
+					data["parent_nrn"] = "" // clear parent
+				} else {
+					data["parent_nrn"] = fmt.Sprintf("nweb:retask-task:task:%s", parentTaskID)
+				}
+			}
+			if cmd.Flags().Changed("reporter") {
+				if reporter == "" {
+					data["reporter_nrn"] = "" // clear reporter
+				} else {
+					if _, err := parseNrn(reporter); err != nil {
+						return fmt.Errorf("invalid --reporter: %w", err)
+					}
+					data["reporter_nrn"] = reporter
+				}
+			}
+			if cmd.Flags().Changed("estimation-points") {
+				data["estimation_points"] = strconv.FormatUint(uint64(estimationPoints), 10)
 			}
 			if cmd.Flags().Changed("due-at") {
 				data["due_at"] = dueAt
@@ -377,10 +429,14 @@ Output fields: task_id`,
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "New task title")
-	cmd.Flags().StringVar(&description, "description", "", "New description")
+	cmd.Flags().StringVar(&description, "description", "", "New description (accepts simple HTML)")
 	cmd.Flags().StringVar(&priority, "priority", "", "New priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT")
-	cmd.Flags().StringVar(&statusID, "status", "", "New status ID")
-	cmd.Flags().StringVar(&assigneeNrn, "assignee", "", "New assignee NRN (e.g. nweb:workspace:member:<uuid>)")
+	cmd.Flags().StringVar(&statusID, "status", "", "New status ID (must exist in the project's statuses)")
+	cmd.Flags().StringVar(&taskType, "task-type", "", "New task type ID (must exist in the project's task types)")
+	cmd.Flags().StringArrayVar(&assignees, "assignee", nil, "Assignee member NRN (repeatable; replaces all; pass empty to clear)")
+	cmd.Flags().StringVar(&parentTaskID, "parent-task-id", "", "Parent task ID (empty string clears the parent)")
+	cmd.Flags().StringVar(&reporter, "reporter", "", "Reporter member NRN (empty string clears it)")
+	cmd.Flags().Uint32Var(&estimationPoints, "estimation-points", 0, "Effort estimate in points (0 = unestimated)")
 	cmd.Flags().StringVar(&dueAt, "due-at", "", "New due date in RFC3339 format")
 	return cmd
 }
