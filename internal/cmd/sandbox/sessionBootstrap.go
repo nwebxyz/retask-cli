@@ -104,15 +104,28 @@ func gitTokenEnv(token string) []string {
 	}
 }
 
+// hostEnvDenylist are variables that must never be inherited from the host
+// machine into a sandbox session. NWEB_API_KEY is the operator's PAT;
+// NWEB_API_TOKEN / NWEB_WORKSPACE_ID identify the operator's own session. The
+// session gets its own scoped values via the injected layer instead.
+var hostEnvDenylist = map[string]bool{
+	"NWEB_API_TOKEN":    true,
+	"NWEB_API_KEY":      true,
+	"NWEB_WORKSPACE_ID": true,
+}
+
 // buildEnv merges three layers into a process environment slice.
 // Later layers override earlier ones:
-//  1. baseEnv  — host machine env (os.Environ())
+//  1. baseEnv  — host machine env (os.Environ()), minus hostEnvDenylist
 //  2. config   — user-configured env vars from Sandbox_Config
 //  3. injected — standard session vars that always override
 func buildEnv(baseEnv []string, config *sandboxv1.Sandbox_Config, injected map[string]string) []string {
 	env := make(map[string]string, len(baseEnv))
 	for _, e := range baseEnv {
 		k, v, _ := strings.Cut(e, "=")
+		if hostEnvDenylist[k] {
+			continue // never inherit operator auth/workspace vars from the host
+		}
 		env[k] = v
 	}
 	for _, ev := range config.GetEnvVars() {
