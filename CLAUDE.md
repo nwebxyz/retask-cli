@@ -29,6 +29,8 @@ internal/
     sandbox/                    # retask sandbox ...
     agent/                      # retask agent ...
     helpcmd/                    # retask help-llm
+    skillcmd/                   # retask skill (prints embedded skill markdown)
+embed.go                        # go:embed of skills/retask-cli.md (root package)
 proto/                          # Protobuf sources (approved services only)
 proto-gen/                      # Generated Go code — never edit by hand
 .bin/

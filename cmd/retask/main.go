@@ -15,6 +15,7 @@ import (
 	projectcmd "github.com/nwebxyz/retask-cli/internal/cmd/project"
 	projectconfigcmd "github.com/nwebxyz/retask-cli/internal/cmd/projectconfig"
 	sandboxcmd "github.com/nwebxyz/retask-cli/internal/cmd/sandbox"
+	skillcmd "github.com/nwebxyz/retask-cli/internal/cmd/skillcmd"
 	taskcmd "github.com/nwebxyz/retask-cli/internal/cmd/task"
 	upgradecmd "github.com/nwebxyz/retask-cli/internal/cmd/upgrade"
 	workspacecmd "github.com/nwebxyz/retask-cli/internal/cmd/workspace"
@@ -85,6 +86,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(projectcmd.NewCommand(gf))
 	root.AddCommand(projectconfigcmd.NewCommand(gf))
 	root.AddCommand(sandboxcmd.NewCommand(gf))
+	root.AddCommand(skillcmd.NewCommand(gf))
 	root.AddCommand(taskcmd.NewCommand(gf))
 	root.AddCommand(upgradecmd.NewCommand(gf))
 	root.AddCommand(workspacecmd.NewCommand(gf))

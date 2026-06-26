@@ -175,7 +175,7 @@ retask help-llm
 retask help-llm | jq '.commands[] | select(.command | contains("task"))'
 ```
 
-See [`skills/retask-cli.md`](skills/retask-cli.md) for the Claude Code skill file.
+For a concise onboarding guide, run `retask skill` — it prints the [`skills/retask-cli.md`](skills/retask-cli.md) Claude Code skill (Markdown), embedded in the binary so it works without the repo. Agents can read `retask skill` first, then drill into `retask help-llm`.
 
 ## Multi-profile config
 

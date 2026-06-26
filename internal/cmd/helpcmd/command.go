@@ -57,8 +57,16 @@ type manifest struct {
 }
 
 type authInfo struct {
-	RequiredEnv []string `json:"required_env"`
-	OptionalEnv []string `json:"optional_env"`
+	Description string       `json:"description"`
+	Methods     []authMethod `json:"methods"`
+	OptionalEnv []string     `json:"optional_env"`
+}
+
+// authMethod describes one way to authenticate, listed in priority order.
+type authMethod struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Env         []string `json:"env"`
 }
 
 func buildManifest() manifest {
@@ -66,8 +74,20 @@ func buildManifest() manifest {
 		CLI:     "retask",
 		Version: version.Version,
 		Auth: authInfo{
-			RequiredEnv: []string{"NWEB_API_KEY", "NWEB_WORKSPACE_ID"},
-			OptionalEnv: []string{"NWEB_API_TOKEN", "NWEB_API_ENDPOINT", "RETASK_PROFILE", "RETASK_NO_PERSIST"},
+			Description: "Authentication resolves a JWT in priority order: if NWEB_API_TOKEN is set it is used directly; otherwise retask exchanges NWEB_API_KEY (PAT) plus a workspace ID for a JWT. Methods below are listed highest priority first.",
+			Methods: []authMethod{
+				{
+					Name:        "token",
+					Description: "Use a ready-to-use JWT directly. Highest priority — if set, PAT exchange is skipped entirely.",
+					Env:         []string{"NWEB_API_TOKEN"},
+				},
+				{
+					Name:        "pat_exchange",
+					Description: "Exchange a Personal Access Token (PAT) for a JWT. Used only when NWEB_API_TOKEN is not set. The PAT is never stored. Workspace ID may also come from --workspace-id or the active profile.",
+					Env:         []string{"NWEB_API_KEY", "NWEB_WORKSPACE_ID"},
+				},
+			},
+			OptionalEnv: []string{"NWEB_API_ENDPOINT", "NWEB_API_TRANSPORT", "RETASK_PROFILE", "RETASK_NO_PERSIST"},
 		},
 		Commands: []commandEntry{
 			{Command: "retask auth login", Description: "Exchange PAT for JWT, save to profile", Example: "retask auth login"},
@@ -141,6 +161,7 @@ func buildManifest() manifest {
 			{Command: "retask agent delete", Description: "Delete an agent", Example: "retask agent delete <agent-id>"},
 			{Command: "retask upgrade", Description: "Upgrade retask to the latest version", Example: "retask upgrade"},
 			{Command: "retask help-llm", Description: "Print machine-readable command manifest for LLM injection", Example: "retask help-llm"},
+			{Command: "retask skill", Description: "Print the retask Claude Code skill (Markdown onboarding guide for agents)", Example: "retask skill"},
 		},
 	}
 }
