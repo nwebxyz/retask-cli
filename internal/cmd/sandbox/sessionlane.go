@@ -89,7 +89,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	sm.logInfo("session_lane_connected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
 
 	// Run bootstrap — writes files, clones repos, builds env.
-	bs := &SessionBootstrap{
+	sb := &SessionBootstrap{
 		SessionID:    sessionID,
 		SessionName:  name,
 		SandboxID:    sm.sandboxID,
@@ -103,7 +103,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		BaseDir:      sm.baseDir,
 		Log:          sm.log,
 	}
-	sessionDir, env, err := bs.Run(ctx, wsConn)
+	sessionDir, env, err := sb.Run(ctx, wsConn)
 	if err != nil {
 		sm.logError("session_bootstrap_failed", "session_id", sessionID, "error", err)
 		wsConn.CloseNow() //nolint:errcheck

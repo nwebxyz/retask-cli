@@ -136,6 +136,54 @@ func TestBuildEnv_InjectedWinsAll(t *testing.T) {
 	assert.Equal(t, "injected", m["SESSION_ID"])
 }
 
+func TestBuildEnv_StripsHostAuthVars(t *testing.T) {
+	// Host-provided auth/workspace vars must never leak into the session.
+	base := []string{
+		"PATH=/usr/bin",
+		"NWEB_API_TOKEN=host-jwt",
+		"NWEB_API_KEY=host-pat",
+		"NWEB_WORKSPACE_ID=host-ws",
+	}
+	cfg := &sandboxv1.Sandbox_Config{}
+	env := buildEnv(base, cfg, nil)
+	m := envToMap(env)
+
+	assert.Equal(t, "/usr/bin", m["PATH"], "unrelated host vars must survive")
+	_, hasToken := m["NWEB_API_TOKEN"]
+	_, hasKey := m["NWEB_API_KEY"]
+	_, hasWS := m["NWEB_WORKSPACE_ID"]
+	assert.False(t, hasToken, "NWEB_API_TOKEN must be stripped from host layer")
+	assert.False(t, hasKey, "NWEB_API_KEY must be stripped from host layer")
+	assert.False(t, hasWS, "NWEB_WORKSPACE_ID must be stripped from host layer")
+}
+
+func TestBuildEnv_InjectedSetsStrippedAuthVars(t *testing.T) {
+	// Stripping the host layer must not block injected session values.
+	base := []string{"NWEB_API_TOKEN=host-jwt", "NWEB_WORKSPACE_ID=host-ws"}
+	cfg := &sandboxv1.Sandbox_Config{}
+	injected := map[string]string{
+		"NWEB_API_TOKEN":    "session-jwt",
+		"NWEB_WORKSPACE_ID": "session-ws",
+	}
+	env := buildEnv(base, cfg, injected)
+	m := envToMap(env)
+	assert.Equal(t, "session-jwt", m["NWEB_API_TOKEN"])
+	assert.Equal(t, "session-ws", m["NWEB_WORKSPACE_ID"])
+}
+
+func TestBuildEnv_ConfigCanSetStrippedAuthVars(t *testing.T) {
+	// Stripping is host-only: a deliberate Sandbox Config value still applies.
+	base := []string{"NWEB_WORKSPACE_ID=host-ws"}
+	cfg := &sandboxv1.Sandbox_Config{
+		EnvVars: []*sandboxv1.Sandbox_Config_EnvVar{
+			{Key: "NWEB_WORKSPACE_ID", Plain: "config-ws"},
+		},
+	}
+	env := buildEnv(base, cfg, nil)
+	m := envToMap(env)
+	assert.Equal(t, "config-ws", m["NWEB_WORKSPACE_ID"])
+}
+
 func TestBuildEnv_SkipsEmptyKey(t *testing.T) {
 	base := []string{}
 	cfg := &sandboxv1.Sandbox_Config{
