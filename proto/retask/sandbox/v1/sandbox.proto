@@ -19,6 +19,11 @@ service SandboxService {
   rpc GetSandbox(.common.v1.Id) returns (Sandbox) {
     option (google.api.http) = {get: "/retask/v1/sandboxes/{id}"};
   }
+  // BE-BE only (service-token auth). Returns the sandbox with
+  // Config.EnvVar.SecretValue.value re-injected from secret-manager.
+  rpc GetSandboxRuntime(.common.v1.Id) returns (SandboxRuntime) {
+    option (google.api.http) = {get: "/retask/v1/sandboxes/{id}:runtime"};
+  }
   rpc SetSandbox(Sandbox) returns (.common.v1.Id) {
     option (google.api.http) = {
       post: "/retask/v1/sandboxes"
@@ -75,6 +80,14 @@ service SandboxService {
   rpc ReportSessionStatus(ReportSessionStatusRequest) returns (.common.v1.Empty) {
     option (google.api.http) = {
       post: "/retask/v1/sessions/{session_id}:report-status"
+      body: "*"
+    };
+  }
+  // BE-BE only (service-token auth). Called by proxy on any sandbox status
+  // transition.
+  rpc ReportSandboxStatus(ReportSandboxStatusRequest) returns (.common.v1.Empty) {
+    option (google.api.http) = {
+      post: "/retask/v1/sandboxes/{sandbox_id}:report-status"
       body: "*"
     };
   }
@@ -469,6 +482,7 @@ message SandboxActivity {
     TYPE_SESSION_STARTED = 6;
     TYPE_SESSION_RUNTIME_RESOLVED = 7;
     TYPE_SESSION_STOPPED = 8;
+    TYPE_SANDBOX_RUNTIME_RESOLVED = 9;
   }
 
   // @inject_tag: bson:"_id,omitempty"
@@ -573,6 +587,20 @@ message SessionRuntime {
   Sandbox sandbox = 2;
 }
 
+// Materialized runtime view of a sandbox, returned by GetSandboxRuntime.
+// Not a stored entity — assembled on each call from the current Sandbox
+// and resolved secret values from secret-manager.
+message SandboxRuntime {
+  // Sandbox loaded verbatim, with one read-path mutation: every
+  // Config.EnvVar.SecretValue has `value` populated with the plaintext
+  // resolved from secret-manager. `secret_nrn` and `masked_value` are
+  // preserved. If a secret cannot be resolved (missing, workspace
+  // mismatch, secret-manager error), `value` stays empty — the other
+  // fields remain so the proxy can log and surface the failure.
+  // NotFound if soft-deleted.
+  Sandbox sandbox = 1;
+}
+
 // ============================================================================
 // Request / Response — SandboxTemplate
 // ============================================================================
@@ -631,22 +659,32 @@ message ReportSessionStatusRequest {
   google.protobuf.Timestamp observed_at = 9;
 }
 
+// ============================================================================
+// ReportSandboxStatus
+// ============================================================================
+
+message ReportSandboxStatusRequest {
+  string sandbox_id = 1;
+  Sandbox.Status status = 2;
+  google.protobuf.Timestamp observed_at = 3;
+}
+
 message SandboxUsageRequest {
   string workspace_id = 1;
-  bool   with_quota   = 2;
+  bool   with_quota = 2;
 }
 
 message SandboxUsage {
   message Quota {
     string                     quota_id = 1;
-    repeated .quota.v1.Quota.Unit units  = 2;
+    repeated .quota.v1.Quota.Unit units = 2;
   }
 
   // Non-deleted sandboxes (counts toward max_sandboxes_per_workspace)
-  uint32 total_sandboxes  = 1;
+  uint32 total_sandboxes = 1;
   // Session.STATUS_ACTIVE count across all sandboxes in the workspace
   // (counts toward max_running_sessions_per_workspace)
   uint32 running_sessions = 2;
   // Runtime quota; populated only when SandboxUsageRequest.with_quota = true
-  Quota  quota            = 3;
+  Quota  quota = 3;
 }
