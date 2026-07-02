@@ -24,3 +24,11 @@ message TaskStatusChanged {
   .common.v1.Nrn changed_by_nrn = 6;
   google.protobuf.Timestamp occurred_at = 7;
 }
+
+message TaskDeleted {
+  string task_id = 1;
+  string project_id = 2;
+  string workspace_id = 3;
+  .common.v1.Nrn deleted_by_nrn = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+}
