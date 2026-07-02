@@ -67,13 +67,10 @@ The server's `parent_comment_id` filter is a proto3 `string` with no presence, s
 
 There is no single "all comments (top-level + replies)" listing. This limitation is documented rather than hidden. On `create`, `--parent-comment-id` sets `Comment.parent_comment_id` to reply to a top-level comment (replies are one level deep — enforced server-side).
 
-### `update` — round-trip to preserve immutable fields
-`SetComment` takes a full `Comment`, so sending only `comment_id` + `body` risks the server overwriting `target_nrn` / `parent_comment_id` with zero values. `update` therefore:
-1. `GetComment(comment_id)` to load the current comment,
-2. replace `body` with the new value,
-3. `SetComment` the full message.
+### `update` — body-only edit (no round-trip)
+Confirmed against `comment/handler/handler.go`: when `SetComment` receives a `Comment` with a non-empty `comment_id`, the edit path loads the existing comment by ID, checks authorship, and applies **only `in.GetBody()`** (`UpdateComment(ctx, existing, in.GetBody(), user)`). `target_nrn`, `parent_comment_id`, and attachments are taken from the stored record and are not affected by the request.
 
-Attachments are managed only via the attachment RPCs, so they are unaffected. **Implementation note:** confirm against `comment/handler/handler.go` whether `SetComment` merges (loads existing by `comment_id` and only applies `body`/mentions). If it merges, drop the extra `GetComment` and send `comment_id` + `body` + `workspace_id` directly. Prefer the round-trip if the merge behavior is uncertain.
+Therefore `update` sends `SetComment(&Comment{CommentId: <id>, Body: <body>})` directly — no `GetComment`, no `workspace_id`, no `target_nrn`. The server flips `is_edited`.
 
 ### Workspace scope
 `list` and `create` require the workspace ID (`Comment.workspace_id` / filter `workspace_id`). Resolve from `gf.WorkspaceID` (global `--workspace-id` / `NWEB_WORKSPACE_ID`). If unset, return a clear error, matching `task get-by-key`:
