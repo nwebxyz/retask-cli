@@ -42,6 +42,9 @@ const (
 	// SandboxServiceGetSandboxProcedure is the fully-qualified name of the SandboxService's GetSandbox
 	// RPC.
 	SandboxServiceGetSandboxProcedure = "/retask.sandbox.v1.SandboxService/GetSandbox"
+	// SandboxServiceGetSandboxRuntimeProcedure is the fully-qualified name of the SandboxService's
+	// GetSandboxRuntime RPC.
+	SandboxServiceGetSandboxRuntimeProcedure = "/retask.sandbox.v1.SandboxService/GetSandboxRuntime"
 	// SandboxServiceSetSandboxProcedure is the fully-qualified name of the SandboxService's SetSandbox
 	// RPC.
 	SandboxServiceSetSandboxProcedure = "/retask.sandbox.v1.SandboxService/SetSandbox"
@@ -78,6 +81,9 @@ const (
 	// SandboxServiceReportSessionStatusProcedure is the fully-qualified name of the SandboxService's
 	// ReportSessionStatus RPC.
 	SandboxServiceReportSessionStatusProcedure = "/retask.sandbox.v1.SandboxService/ReportSessionStatus"
+	// SandboxServiceReportSandboxStatusProcedure is the fully-qualified name of the SandboxService's
+	// ReportSandboxStatus RPC.
+	SandboxServiceReportSandboxStatusProcedure = "/retask.sandbox.v1.SandboxService/ReportSandboxStatus"
 	// SandboxServiceGetSandboxTemplatesProcedure is the fully-qualified name of the SandboxService's
 	// GetSandboxTemplates RPC.
 	SandboxServiceGetSandboxTemplatesProcedure = "/retask.sandbox.v1.SandboxService/GetSandboxTemplates"
@@ -103,6 +109,7 @@ var (
 	sandboxServiceServiceDescriptor                     = v1.File_retask_sandbox_v1_sandbox_proto.Services().ByName("SandboxService")
 	sandboxServiceGetSandboxesMethodDescriptor          = sandboxServiceServiceDescriptor.Methods().ByName("GetSandboxes")
 	sandboxServiceGetSandboxMethodDescriptor            = sandboxServiceServiceDescriptor.Methods().ByName("GetSandbox")
+	sandboxServiceGetSandboxRuntimeMethodDescriptor     = sandboxServiceServiceDescriptor.Methods().ByName("GetSandboxRuntime")
 	sandboxServiceSetSandboxMethodDescriptor            = sandboxServiceServiceDescriptor.Methods().ByName("SetSandbox")
 	sandboxServiceStopSandboxMethodDescriptor           = sandboxServiceServiceDescriptor.Methods().ByName("StopSandbox")
 	sandboxServiceDeleteSandboxMethodDescriptor         = sandboxServiceServiceDescriptor.Methods().ByName("DeleteSandbox")
@@ -115,6 +122,7 @@ var (
 	sandboxServiceStopSessionMethodDescriptor           = sandboxServiceServiceDescriptor.Methods().ByName("StopSession")
 	sandboxServiceDeleteSessionMethodDescriptor         = sandboxServiceServiceDescriptor.Methods().ByName("DeleteSession")
 	sandboxServiceReportSessionStatusMethodDescriptor   = sandboxServiceServiceDescriptor.Methods().ByName("ReportSessionStatus")
+	sandboxServiceReportSandboxStatusMethodDescriptor   = sandboxServiceServiceDescriptor.Methods().ByName("ReportSandboxStatus")
 	sandboxServiceGetSandboxTemplatesMethodDescriptor   = sandboxServiceServiceDescriptor.Methods().ByName("GetSandboxTemplates")
 	sandboxServiceGetSandboxTemplateMethodDescriptor    = sandboxServiceServiceDescriptor.Methods().ByName("GetSandboxTemplate")
 	sandboxServiceSetSandboxTemplateMethodDescriptor    = sandboxServiceServiceDescriptor.Methods().ByName("SetSandboxTemplate")
@@ -128,6 +136,9 @@ type SandboxServiceClient interface {
 	// === Sandbox CRUD ===
 	GetSandboxes(context.Context, *connect.Request[v1.SandboxesRequest]) (*connect.Response[v1.SandboxesResponse], error)
 	GetSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.Sandbox], error)
+	// BE-BE only (service-token auth). Returns the sandbox with
+	// Config.EnvVar.SecretValue.value re-injected from secret-manager.
+	GetSandboxRuntime(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.SandboxRuntime], error)
 	SetSandbox(context.Context, *connect.Request[v1.Sandbox]) (*connect.Response[v11.Id], error)
 	StopSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
 	DeleteSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
@@ -150,6 +161,9 @@ type SandboxServiceClient interface {
 	// transition. Triggers async LLM extraction on IDLE and VM shutdown
 	// evaluation on TIMEOUT.
 	ReportSessionStatus(context.Context, *connect.Request[v1.ReportSessionStatusRequest]) (*connect.Response[v11.Empty], error)
+	// BE-BE only (service-token auth). Called by proxy on any sandbox status
+	// transition.
+	ReportSandboxStatus(context.Context, *connect.Request[v1.ReportSandboxStatusRequest]) (*connect.Response[v11.Empty], error)
 	// === SandboxTemplate CRUD ===
 	GetSandboxTemplates(context.Context, *connect.Request[v1.SandboxTemplatesRequest]) (*connect.Response[v1.SandboxTemplatesResponse], error)
 	GetSandboxTemplate(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.SandboxTemplate], error)
@@ -180,6 +194,12 @@ func NewSandboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+SandboxServiceGetSandboxProcedure,
 			connect.WithSchema(sandboxServiceGetSandboxMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
+		getSandboxRuntime: connect.NewClient[v11.Id, v1.SandboxRuntime](
+			httpClient,
+			baseURL+SandboxServiceGetSandboxRuntimeProcedure,
+			connect.WithSchema(sandboxServiceGetSandboxRuntimeMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
 		setSandbox: connect.NewClient[v1.Sandbox, v11.Id](
@@ -254,6 +274,12 @@ func NewSandboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sandboxServiceReportSessionStatusMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		reportSandboxStatus: connect.NewClient[v1.ReportSandboxStatusRequest, v11.Empty](
+			httpClient,
+			baseURL+SandboxServiceReportSandboxStatusProcedure,
+			connect.WithSchema(sandboxServiceReportSandboxStatusMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 		getSandboxTemplates: connect.NewClient[v1.SandboxTemplatesRequest, v1.SandboxTemplatesResponse](
 			httpClient,
 			baseURL+SandboxServiceGetSandboxTemplatesProcedure,
@@ -297,6 +323,7 @@ func NewSandboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 type sandboxServiceClient struct {
 	getSandboxes          *connect.Client[v1.SandboxesRequest, v1.SandboxesResponse]
 	getSandbox            *connect.Client[v11.Id, v1.Sandbox]
+	getSandboxRuntime     *connect.Client[v11.Id, v1.SandboxRuntime]
 	setSandbox            *connect.Client[v1.Sandbox, v11.Id]
 	stopSandbox           *connect.Client[v11.Id, v11.Empty]
 	deleteSandbox         *connect.Client[v11.Id, v11.Empty]
@@ -309,6 +336,7 @@ type sandboxServiceClient struct {
 	stopSession           *connect.Client[v11.Id, v11.Empty]
 	deleteSession         *connect.Client[v11.Id, v11.Empty]
 	reportSessionStatus   *connect.Client[v1.ReportSessionStatusRequest, v11.Empty]
+	reportSandboxStatus   *connect.Client[v1.ReportSandboxStatusRequest, v11.Empty]
 	getSandboxTemplates   *connect.Client[v1.SandboxTemplatesRequest, v1.SandboxTemplatesResponse]
 	getSandboxTemplate    *connect.Client[v11.Id, v1.SandboxTemplate]
 	setSandboxTemplate    *connect.Client[v1.SandboxTemplate, v11.Id]
@@ -325,6 +353,11 @@ func (c *sandboxServiceClient) GetSandboxes(ctx context.Context, req *connect.Re
 // GetSandbox calls retask.sandbox.v1.SandboxService.GetSandbox.
 func (c *sandboxServiceClient) GetSandbox(ctx context.Context, req *connect.Request[v11.Id]) (*connect.Response[v1.Sandbox], error) {
 	return c.getSandbox.CallUnary(ctx, req)
+}
+
+// GetSandboxRuntime calls retask.sandbox.v1.SandboxService.GetSandboxRuntime.
+func (c *sandboxServiceClient) GetSandboxRuntime(ctx context.Context, req *connect.Request[v11.Id]) (*connect.Response[v1.SandboxRuntime], error) {
+	return c.getSandboxRuntime.CallUnary(ctx, req)
 }
 
 // SetSandbox calls retask.sandbox.v1.SandboxService.SetSandbox.
@@ -387,6 +420,11 @@ func (c *sandboxServiceClient) ReportSessionStatus(ctx context.Context, req *con
 	return c.reportSessionStatus.CallUnary(ctx, req)
 }
 
+// ReportSandboxStatus calls retask.sandbox.v1.SandboxService.ReportSandboxStatus.
+func (c *sandboxServiceClient) ReportSandboxStatus(ctx context.Context, req *connect.Request[v1.ReportSandboxStatusRequest]) (*connect.Response[v11.Empty], error) {
+	return c.reportSandboxStatus.CallUnary(ctx, req)
+}
+
 // GetSandboxTemplates calls retask.sandbox.v1.SandboxService.GetSandboxTemplates.
 func (c *sandboxServiceClient) GetSandboxTemplates(ctx context.Context, req *connect.Request[v1.SandboxTemplatesRequest]) (*connect.Response[v1.SandboxTemplatesResponse], error) {
 	return c.getSandboxTemplates.CallUnary(ctx, req)
@@ -422,6 +460,9 @@ type SandboxServiceHandler interface {
 	// === Sandbox CRUD ===
 	GetSandboxes(context.Context, *connect.Request[v1.SandboxesRequest]) (*connect.Response[v1.SandboxesResponse], error)
 	GetSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.Sandbox], error)
+	// BE-BE only (service-token auth). Returns the sandbox with
+	// Config.EnvVar.SecretValue.value re-injected from secret-manager.
+	GetSandboxRuntime(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.SandboxRuntime], error)
 	SetSandbox(context.Context, *connect.Request[v1.Sandbox]) (*connect.Response[v11.Id], error)
 	StopSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
 	DeleteSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
@@ -444,6 +485,9 @@ type SandboxServiceHandler interface {
 	// transition. Triggers async LLM extraction on IDLE and VM shutdown
 	// evaluation on TIMEOUT.
 	ReportSessionStatus(context.Context, *connect.Request[v1.ReportSessionStatusRequest]) (*connect.Response[v11.Empty], error)
+	// BE-BE only (service-token auth). Called by proxy on any sandbox status
+	// transition.
+	ReportSandboxStatus(context.Context, *connect.Request[v1.ReportSandboxStatusRequest]) (*connect.Response[v11.Empty], error)
 	// === SandboxTemplate CRUD ===
 	GetSandboxTemplates(context.Context, *connect.Request[v1.SandboxTemplatesRequest]) (*connect.Response[v1.SandboxTemplatesResponse], error)
 	GetSandboxTemplate(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.SandboxTemplate], error)
@@ -470,6 +514,12 @@ func NewSandboxServiceHandler(svc SandboxServiceHandler, opts ...connect.Handler
 		SandboxServiceGetSandboxProcedure,
 		svc.GetSandbox,
 		connect.WithSchema(sandboxServiceGetSandboxMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
+	sandboxServiceGetSandboxRuntimeHandler := connect.NewUnaryHandler(
+		SandboxServiceGetSandboxRuntimeProcedure,
+		svc.GetSandboxRuntime,
+		connect.WithSchema(sandboxServiceGetSandboxRuntimeMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
 	sandboxServiceSetSandboxHandler := connect.NewUnaryHandler(
@@ -544,6 +594,12 @@ func NewSandboxServiceHandler(svc SandboxServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sandboxServiceReportSessionStatusMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	sandboxServiceReportSandboxStatusHandler := connect.NewUnaryHandler(
+		SandboxServiceReportSandboxStatusProcedure,
+		svc.ReportSandboxStatus,
+		connect.WithSchema(sandboxServiceReportSandboxStatusMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	sandboxServiceGetSandboxTemplatesHandler := connect.NewUnaryHandler(
 		SandboxServiceGetSandboxTemplatesProcedure,
 		svc.GetSandboxTemplates,
@@ -586,6 +642,8 @@ func NewSandboxServiceHandler(svc SandboxServiceHandler, opts ...connect.Handler
 			sandboxServiceGetSandboxesHandler.ServeHTTP(w, r)
 		case SandboxServiceGetSandboxProcedure:
 			sandboxServiceGetSandboxHandler.ServeHTTP(w, r)
+		case SandboxServiceGetSandboxRuntimeProcedure:
+			sandboxServiceGetSandboxRuntimeHandler.ServeHTTP(w, r)
 		case SandboxServiceSetSandboxProcedure:
 			sandboxServiceSetSandboxHandler.ServeHTTP(w, r)
 		case SandboxServiceStopSandboxProcedure:
@@ -610,6 +668,8 @@ func NewSandboxServiceHandler(svc SandboxServiceHandler, opts ...connect.Handler
 			sandboxServiceDeleteSessionHandler.ServeHTTP(w, r)
 		case SandboxServiceReportSessionStatusProcedure:
 			sandboxServiceReportSessionStatusHandler.ServeHTTP(w, r)
+		case SandboxServiceReportSandboxStatusProcedure:
+			sandboxServiceReportSandboxStatusHandler.ServeHTTP(w, r)
 		case SandboxServiceGetSandboxTemplatesProcedure:
 			sandboxServiceGetSandboxTemplatesHandler.ServeHTTP(w, r)
 		case SandboxServiceGetSandboxTemplateProcedure:
@@ -637,6 +697,10 @@ func (UnimplementedSandboxServiceHandler) GetSandboxes(context.Context, *connect
 
 func (UnimplementedSandboxServiceHandler) GetSandbox(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.Sandbox], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.sandbox.v1.SandboxService.GetSandbox is not implemented"))
+}
+
+func (UnimplementedSandboxServiceHandler) GetSandboxRuntime(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.SandboxRuntime], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.sandbox.v1.SandboxService.GetSandboxRuntime is not implemented"))
 }
 
 func (UnimplementedSandboxServiceHandler) SetSandbox(context.Context, *connect.Request[v1.Sandbox]) (*connect.Response[v11.Id], error) {
@@ -685,6 +749,10 @@ func (UnimplementedSandboxServiceHandler) DeleteSession(context.Context, *connec
 
 func (UnimplementedSandboxServiceHandler) ReportSessionStatus(context.Context, *connect.Request[v1.ReportSessionStatusRequest]) (*connect.Response[v11.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.sandbox.v1.SandboxService.ReportSessionStatus is not implemented"))
+}
+
+func (UnimplementedSandboxServiceHandler) ReportSandboxStatus(context.Context, *connect.Request[v1.ReportSandboxStatusRequest]) (*connect.Response[v11.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.sandbox.v1.SandboxService.ReportSandboxStatus is not implemented"))
 }
 
 func (UnimplementedSandboxServiceHandler) GetSandboxTemplates(context.Context, *connect.Request[v1.SandboxTemplatesRequest]) (*connect.Response[v1.SandboxTemplatesResponse], error) {

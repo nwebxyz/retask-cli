@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	agentcmd "github.com/nwebxyz/retask-cli/internal/cmd/agent"
 	authcmd "github.com/nwebxyz/retask-cli/internal/cmd/auth"
+	commentcmd "github.com/nwebxyz/retask-cli/internal/cmd/comment"
 	customercmd "github.com/nwebxyz/retask-cli/internal/cmd/customer"
 	filecmd "github.com/nwebxyz/retask-cli/internal/cmd/file"
 	helpcmd "github.com/nwebxyz/retask-cli/internal/cmd/helpcmd"
@@ -79,6 +80,7 @@ func newRootCommand() *cobra.Command {
 	// Service commands registered here — add one line per new service
 	root.AddCommand(agentcmd.NewCommand(gf))
 	root.AddCommand(authcmd.NewCommand(gf))
+	root.AddCommand(commentcmd.NewCommand(gf))
 	root.AddCommand(customercmd.NewCommand(gf))
 	root.AddCommand(filecmd.NewCommand(gf))
 	root.AddCommand(helpcmd.NewCommand(gf))
