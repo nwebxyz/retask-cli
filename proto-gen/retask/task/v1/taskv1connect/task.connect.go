@@ -59,6 +59,9 @@ const (
 	// TaskServiceGetTasksUsageProcedure is the fully-qualified name of the TaskService's GetTasksUsage
 	// RPC.
 	TaskServiceGetTasksUsageProcedure = "/retask.task.v1.TaskService/GetTasksUsage"
+	// TaskServiceCheckTaskPermissionsProcedure is the fully-qualified name of the TaskService's
+	// CheckTaskPermissions RPC.
+	TaskServiceCheckTaskPermissionsProcedure = "/retask.task.v1.TaskService/CheckTaskPermissions"
 )
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
@@ -73,6 +76,7 @@ var (
 	taskServiceAddTaskAttachmentMethodDescriptor    = taskServiceServiceDescriptor.Methods().ByName("AddTaskAttachment")
 	taskServiceDeleteTaskAttachmentMethodDescriptor = taskServiceServiceDescriptor.Methods().ByName("DeleteTaskAttachment")
 	taskServiceGetTasksUsageMethodDescriptor        = taskServiceServiceDescriptor.Methods().ByName("GetTasksUsage")
+	taskServiceCheckTaskPermissionsMethodDescriptor = taskServiceServiceDescriptor.Methods().ByName("CheckTaskPermissions")
 )
 
 // TaskServiceClient is a client for the retask.task.v1.TaskService service.
@@ -86,6 +90,7 @@ type TaskServiceClient interface {
 	AddTaskAttachment(context.Context, *connect.Request[v1.AddTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
 	DeleteTaskAttachment(context.Context, *connect.Request[v1.DeleteTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
 	GetTasksUsage(context.Context, *connect.Request[v1.TasksUsageRequest]) (*connect.Response[v1.TasksUsage], error)
+	CheckTaskPermissions(context.Context, *connect.Request[v1.CheckTaskPermissionsRequest]) (*connect.Response[v1.CheckTaskPermissionsResponse], error)
 }
 
 // NewTaskServiceClient constructs a client for the retask.task.v1.TaskService service. By default,
@@ -152,6 +157,12 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceGetTasksUsageMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		checkTaskPermissions: connect.NewClient[v1.CheckTaskPermissionsRequest, v1.CheckTaskPermissionsResponse](
+			httpClient,
+			baseURL+TaskServiceCheckTaskPermissionsProcedure,
+			connect.WithSchema(taskServiceCheckTaskPermissionsMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -166,6 +177,7 @@ type taskServiceClient struct {
 	addTaskAttachment    *connect.Client[v1.AddTaskAttachmentRequest, v1.Task]
 	deleteTaskAttachment *connect.Client[v1.DeleteTaskAttachmentRequest, v1.Task]
 	getTasksUsage        *connect.Client[v1.TasksUsageRequest, v1.TasksUsage]
+	checkTaskPermissions *connect.Client[v1.CheckTaskPermissionsRequest, v1.CheckTaskPermissionsResponse]
 }
 
 // GetTasks calls retask.task.v1.TaskService.GetTasks.
@@ -213,6 +225,11 @@ func (c *taskServiceClient) GetTasksUsage(ctx context.Context, req *connect.Requ
 	return c.getTasksUsage.CallUnary(ctx, req)
 }
 
+// CheckTaskPermissions calls retask.task.v1.TaskService.CheckTaskPermissions.
+func (c *taskServiceClient) CheckTaskPermissions(ctx context.Context, req *connect.Request[v1.CheckTaskPermissionsRequest]) (*connect.Response[v1.CheckTaskPermissionsResponse], error) {
+	return c.checkTaskPermissions.CallUnary(ctx, req)
+}
+
 // TaskServiceHandler is an implementation of the retask.task.v1.TaskService service.
 type TaskServiceHandler interface {
 	GetTasks(context.Context, *connect.Request[v1.TasksRequest]) (*connect.Response[v1.TasksResponse], error)
@@ -224,6 +241,7 @@ type TaskServiceHandler interface {
 	AddTaskAttachment(context.Context, *connect.Request[v1.AddTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
 	DeleteTaskAttachment(context.Context, *connect.Request[v1.DeleteTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
 	GetTasksUsage(context.Context, *connect.Request[v1.TasksUsageRequest]) (*connect.Response[v1.TasksUsage], error)
+	CheckTaskPermissions(context.Context, *connect.Request[v1.CheckTaskPermissionsRequest]) (*connect.Response[v1.CheckTaskPermissionsResponse], error)
 }
 
 // NewTaskServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -286,6 +304,12 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceGetTasksUsageMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	taskServiceCheckTaskPermissionsHandler := connect.NewUnaryHandler(
+		TaskServiceCheckTaskPermissionsProcedure,
+		svc.CheckTaskPermissions,
+		connect.WithSchema(taskServiceCheckTaskPermissionsMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/retask.task.v1.TaskService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TaskServiceGetTasksProcedure:
@@ -306,6 +330,8 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceDeleteTaskAttachmentHandler.ServeHTTP(w, r)
 		case TaskServiceGetTasksUsageProcedure:
 			taskServiceGetTasksUsageHandler.ServeHTTP(w, r)
+		case TaskServiceCheckTaskPermissionsProcedure:
+			taskServiceCheckTaskPermissionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -349,4 +375,8 @@ func (UnimplementedTaskServiceHandler) DeleteTaskAttachment(context.Context, *co
 
 func (UnimplementedTaskServiceHandler) GetTasksUsage(context.Context, *connect.Request[v1.TasksUsageRequest]) (*connect.Response[v1.TasksUsage], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.GetTasksUsage is not implemented"))
+}
+
+func (UnimplementedTaskServiceHandler) CheckTaskPermissions(context.Context, *connect.Request[v1.CheckTaskPermissionsRequest]) (*connect.Response[v1.CheckTaskPermissionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.CheckTaskPermissions is not implemented"))
 }

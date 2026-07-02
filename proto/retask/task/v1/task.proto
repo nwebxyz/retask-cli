@@ -10,6 +10,7 @@ import "common/v1/soft_delete.proto";
 import "file/v1/file.proto";
 import "retask/common/v1/source.proto";
 import "retask/common/v1/types.proto";
+import "project/v1/project.proto";
 
 service TaskService {
   rpc GetTasks(TasksRequest) returns (TasksResponse) {
@@ -50,6 +51,13 @@ service TaskService {
 
   rpc GetTasksUsage(TasksUsageRequest) returns (TasksUsage) {
     option (google.api.http) = {get: "/retask/v1/tasks:usage"};
+  }
+
+  rpc CheckTaskPermissions(CheckTaskPermissionsRequest) returns (CheckTaskPermissionsResponse) {
+    option (google.api.http) = {
+      post: "/retask/v1/tasks:check-permissions"
+      body: "*"
+    };
   }
 }
 
@@ -225,4 +233,27 @@ message TasksUsage {
     uint32 total_tasks = 2;
   }
   repeated ProjectCount by_project = 1;
+}
+
+// CheckTaskPermissions returns the caller's effective access to each requested
+// task. Task access is inherited from the task's project, so the effective role
+// is a project.v1.MemberRole. Only tasks the user can access are returned —
+// absence from `permissions` means NO view access (avoids the
+// MEMBER_ROLE_VIEWER = 0 default ambiguity). Mirrors CheckProjectPermissions.
+message CheckTaskPermissionsRequest {
+  .common.v1.Nrn user_nrn                = 1;
+  // Pass the lowest role (MEMBER_ROLE_VIEWER) to retrieve the effective role.
+  .project.v1.MemberRole required_role   = 2;
+  string workspace_id                    = 3;
+  repeated string task_ids               = 4;
+}
+
+message CheckTaskPermissionsResponse {
+  repeated TaskPermission permissions = 1;
+}
+
+message TaskPermission {
+  string task_id                         = 1;
+  // Role inherited from the task's project.
+  .project.v1.MemberRole effective_role  = 2;
 }
