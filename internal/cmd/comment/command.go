@@ -19,9 +19,6 @@ import (
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
-// domain is the NRN domain segment for this deployment.
-const domain = "nweb"
-
 // NewCommand returns the top-level "comment" cobra command.
 func NewCommand(gf *flags.Global) *cobra.Command {
 	cmd := &cobra.Command{
@@ -64,7 +61,7 @@ func connect(gf *flags.Global) (commentv1connect.CommentServiceClient, func(), e
 // taskNrn builds the target NRN for a task comment: nweb:retask-task:task:<id>.
 func taskNrn(taskID string) *commonv1.Nrn {
 	return &commonv1.Nrn{
-		Domain:       domain,
+		Domain:       "nweb",
 		Service:      "retask-task",
 		ResourceType: "task",
 		ResourceId:   taskID,
@@ -107,8 +104,8 @@ func newListCommand(gf *flags.Global) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List comments on a task",
-		Long: `List comments on a task. Returns top-level comments by default; pass
---parent-comment-id to list the replies under a top-level comment.
+		Long: `List comments on a task. Returns all comments (top-level and replies) by
+default; pass --parent-comment-id to list only the replies under a comment.
 
 The workspace ID is required and can be provided via the global --workspace-id
 flag or NWEB_WORKSPACE_ID env var.
@@ -120,7 +117,7 @@ Usage examples:
 
 Flags:
   --task string                Required. Task ID whose comments to list
-  --parent-comment-id string   List replies under this comment ID (default: top-level only)
+  --parent-comment-id string   List only replies under this comment ID (default: all comments)
   --sort string                Sort order: default, created-asc, created-desc
   --created-by string          Filter by author member NRN (repeatable, format: nweb:workspace:member:<uuid>)
 
@@ -140,7 +137,7 @@ Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, me
 			filter := &commentv1.CommentsRequest_Filter{
 				WorkspaceId:     gf.WorkspaceID,
 				TargetNrn:       taskNrn(taskID),
-				ParentCommentId: parentCommentID, // "" = top-level only
+				ParentCommentId: parentCommentID, // empty = no filter (all comments)
 			}
 			for _, c := range createdBy {
 				nrn, err := parseNrn(c)
@@ -166,7 +163,7 @@ Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, me
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "Task ID whose comments to list (required)")
-	cmd.Flags().StringVar(&parentCommentID, "parent-comment-id", "", "List replies under this comment ID (default: top-level only)")
+	cmd.Flags().StringVar(&parentCommentID, "parent-comment-id", "", "List only replies under this comment ID (default: all comments)")
 	cmd.Flags().StringVar(&sortStr, "sort", "", "Sort order: default, created-asc, created-desc")
 	cmd.Flags().StringArrayVar(&createdBy, "created-by", nil, "Filter by author member NRN (repeatable, format: nweb:workspace:member:<uuid>)")
 	return cmd
