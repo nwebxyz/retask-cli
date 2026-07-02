@@ -147,6 +147,7 @@ Flags:
 | Service | Import path |
 |---|---|
 | auth | `proto-gen/auth/v1` |
+| comment | `proto-gen/comment/v1` |
 | common | `proto-gen/common/v1` |
 | customer | `proto-gen/customer/v1` |
 | file | `proto-gen/file/v1` |

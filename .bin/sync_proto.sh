@@ -10,6 +10,7 @@ fi
 
 APPROVED=(
   "auth/v1"
+  "comment/v1"
   "common/v1"
   "customer/v1"
   "file/v1"
