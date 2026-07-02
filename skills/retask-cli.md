@@ -44,6 +44,36 @@ retask resolves a JWT in priority order:
 ## Output
 All output is JSON by default. Add `--pretty` for human-readable tables.
 
+## Comments
+Comment on tasks with `retask comment`. Comments require workspace context
+(`--workspace-id` or `NWEB_WORKSPACE_ID`) and target a task via `--task <task-id>`.
+
+```bash
+retask comment create --task <task-id> --body '<p>Looks good</p>'
+retask comment list --task <task-id>                                # top-level comments
+retask comment list --task <task-id> --parent-comment-id <cmt-id>   # replies
+retask comment update <comment-id> --body '<p>Edited</p>'           # author only; sets is_edited
+retask comment delete <comment-id>                                  # cascades to replies
+```
+
+- `--body` is stored verbatim as **HTML** (TipTap `getHTML()` format), the same
+  as task descriptions.
+- **Mention a member** by embedding a span in the body (the server parses
+  mentions from the body on every write):
+
+  ```html
+  <span data-type="mention" data-id="nweb:workspace:member:<uuid>">@Name</span>
+  ```
+
+- **Threading is one level:** `--parent-comment-id` replies to a top-level
+  comment; a reply cannot be replied to.
+- **Attachments** reference file IDs from `retask file`:
+
+  ```bash
+  retask comment attachment add <comment-id> <file-id>
+  retask comment attachment remove <comment-id> <file-id>
+  ```
+
 ## Discovery
 ```bash
 retask skill              # this onboarding guide (Markdown)
