@@ -37,15 +37,15 @@ service TaskService {
       body: "*"
     };
   }
-  rpc AddTaskAttachment(AddTaskAttachmentRequest) returns (Task) {
+  rpc AddTaskAttachments(AddTaskAttachmentsRequest) returns (TaskAttachmentsResponse) {
     option (google.api.http) = {
       post: "/retask/v1/tasks/{task_id}/attachments"
       body: "*"
     };
   }
-  rpc DeleteTaskAttachment(DeleteTaskAttachmentRequest) returns (Task) {
+  rpc DeleteTaskAttachments(DeleteTaskAttachmentsRequest) returns (TaskAttachmentsResponse) {
     option (google.api.http) = {
-      delete: "/retask/v1/tasks/{task_id}/attachments/{file_id}"
+      delete: "/retask/v1/tasks/{task_id}/attachments"
     };
   }
 
@@ -136,8 +136,10 @@ message Task {
 
   // === Attachments ===
   // attachments is a snapshot of FileInfo captured at the time each file was
-  // attached. Modified only via AddTaskAttachment / DeleteTaskAttachment.
-  // @inject_tag: bson:"attachments"
+  // attached. Modified only via AddTaskAttachments / DeleteTaskAttachments.
+  // omitempty so a task with no attachments stores no field (not BSON null);
+  // $addToSet cannot apply to a null field.
+  // @inject_tag: bson:"attachments,omitempty"
   repeated file.v1.FileInfo attachments = 17;
 
   // === External source ===
@@ -211,14 +213,24 @@ message TaskByKeyRequest {
   string key = 2;
 }
 
-message AddTaskAttachmentRequest {
-  string task_id = 1;
-  string file_id = 2;
+message AddTaskAttachmentsRequest {
+  string task_id           = 1;
+  repeated string file_ids = 2;
 }
 
-message DeleteTaskAttachmentRequest {
-  string task_id = 1;
-  string file_id = 2;
+message DeleteTaskAttachmentsRequest {
+  string task_id           = 1;
+  // Carried as repeated query params on the DELETE, e.g.
+  // ?file_ids=a&file_ids=b (repeated string maps to HTTP query params).
+  repeated string file_ids = 2;
+}
+
+// TaskAttachmentsResponse is the task's attachment state after an
+// Add/Delete mutation: attachments is the FULL current list, not just the
+// files touched by the call.
+message TaskAttachmentsResponse {
+  string task_id                        = 1;
+  repeated file.v1.FileInfo attachments = 2;
 }
 
 message TasksUsageRequest {

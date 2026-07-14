@@ -26,15 +26,15 @@ service CommentService {
   rpc DeleteComment(.common.v1.Id) returns (.common.v1.Empty) {
     option (google.api.http) = {delete: "/v1/comments/{id}"};
   }
-  rpc AddCommentAttachment(AddCommentAttachmentRequest) returns (Comment) {
+  rpc AddCommentAttachments(AddCommentAttachmentsRequest) returns (CommentAttachmentsResponse) {
     option (google.api.http) = {
       post: "/v1/comments/{comment_id}/attachments"
       body: "*"
     };
   }
-  rpc DeleteCommentAttachment(DeleteCommentAttachmentRequest) returns (Comment) {
+  rpc DeleteCommentAttachments(DeleteCommentAttachmentsRequest) returns (CommentAttachmentsResponse) {
     option (google.api.http) = {
-      delete: "/v1/comments/{comment_id}/attachments/{file_id}"
+      delete: "/v1/comments/{comment_id}/attachments"
     };
   }
 }
@@ -69,13 +69,22 @@ message Comment {
 
   // === Attachments ===
   // Snapshot of FileInfo captured when each file was attached, like
-  // task.attachments. Modified only via AddCommentAttachment / DeleteCommentAttachment.
-  // @inject_tag: bson:"attachments"
+  // task.attachments. Modified only via AddCommentAttachments / DeleteCommentAttachments.
+  // omitempty so a comment with no attachments stores no field (not BSON null);
+  // $addToSet cannot apply to a null field.
+  // @inject_tag: bson:"attachments,omitempty"
   repeated file.v1.FileInfo attachments = 7;
 
   // === Edit indicator ===
   // is_edited becomes true the first time the comment's body or attachments
   // change after creation. FE renders an "Edited" label.
+  //
+  // Exception: files attached within 60s of creation do NOT mark the comment
+  // edited. Posting a comment with attachments takes two calls — SetComment to
+  // create it, then AddCommentAttachments with the already-uploaded file ids —
+  // and that second call is part of posting, not an edit of what was posted.
+  // Attaching to an older comment, and detaching a file at any time, both mark
+  // it edited.
   // @inject_tag: bson:"is_edited"
   bool is_edited = 8;
 
@@ -107,7 +116,9 @@ message CommentsRequest {
     repeated string comment_ids             = 3;
     // parent_comment_id: omit = all; "" = top-level only; "<id>" = replies under it.
     string parent_comment_id                = 4;
-    repeated .common.v1.Nrn created_by_nrns = 5;
+    // NRN as string[]: repeated message fields can't map to HTTP query params on
+    // GET filters (grpc transcoding). See "Filter Field Conventions" in CLAUDE.md.
+    repeated string created_by_nrns         = 5;
   }
   enum Sort {
     SORT_DEFAULT         = 0;  // created_at DESC (newest first)
@@ -123,12 +134,22 @@ message CommentsResponse {
   repeated Comment comments = 1;
 }
 
-message AddCommentAttachmentRequest {
-  string comment_id = 1;
-  string file_id    = 2;
+message AddCommentAttachmentsRequest {
+  string comment_id        = 1;
+  repeated string file_ids = 2;
 }
 
-message DeleteCommentAttachmentRequest {
-  string comment_id = 1;
-  string file_id    = 2;
+message DeleteCommentAttachmentsRequest {
+  string comment_id        = 1;
+  // Carried as repeated query params on the DELETE, e.g.
+  // ?file_ids=a&file_ids=b (repeated string maps to HTTP query params).
+  repeated string file_ids = 2;
+}
+
+// CommentAttachmentsResponse is the comment's attachment state after an
+// Add/Delete mutation: attachments is the FULL current list, not just the
+// files touched by the call.
+message CommentAttachmentsResponse {
+  string comment_id                     = 1;
+  repeated file.v1.FileInfo attachments = 2;
 }
