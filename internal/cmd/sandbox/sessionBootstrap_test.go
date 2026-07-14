@@ -27,16 +27,24 @@ func TestDeriveTargetDir(t *testing.T) {
 	}
 }
 
-// --- normalizeGithubURL ---
+// --- normalizeGitRepoURL ---
 
-func TestNormalizeGithubURL(t *testing.T) {
+func TestNormalizeGitRepoURL(t *testing.T) {
 	tests := []struct {
 		url  string
 		want string
 	}{
 		{
 			"git@github.com:foo/bar.git",
-			"https://github.com/foo/bar.git", // ssh form rewritten to https
+			"https://github.com/foo/bar.git", // github ssh form rewritten to https
+		},
+		{
+			"git@gitlab.com:foo/bar.git",
+			"https://gitlab.com/foo/bar.git", // gitlab ssh form rewritten to https
+		},
+		{
+			"git@gitlab.example.com:group/sub/repo.git",
+			"https://gitlab.example.com/group/sub/repo.git", // self-hosted host rewritten too
 		},
 		{
 			"https://github.com/foo/bar.git",
@@ -44,23 +52,24 @@ func TestNormalizeGithubURL(t *testing.T) {
 		},
 		{
 			"https://gitlab.com/foo/bar.git",
-			"https://gitlab.com/foo/bar.git", // non-github: unchanged
+			"https://gitlab.com/foo/bar.git", // already https: unchanged
 		},
 	}
 	for _, tc := range tests {
-		assert.Equal(t, tc.want, normalizeGithubURL(tc.url), "url=%q", tc.url)
+		assert.Equal(t, tc.want, normalizeGitRepoURL(tc.url), "url=%q", tc.url)
 	}
 }
 
 // --- gitTokenEnv ---
 
-func TestGitTokenEnv_EmptyToken(t *testing.T) {
-	assert.Nil(t, gitTokenEnv(""))
+func TestGitTokenEnv_NoTokens(t *testing.T) {
+	assert.Nil(t, gitTokenEnv(nil))
+	assert.Nil(t, gitTokenEnv(map[string]string{"github.com": "", "gitlab.com": ""}))
 }
 
 func TestGitTokenEnv_InjectsScopedAuthHeader(t *testing.T) {
 	token := "ghp_TOKEN"
-	m := envToMap(gitTokenEnv(token))
+	m := envToMap(gitTokenEnv(map[string]string{"github.com": token}))
 
 	assert.Equal(t, "1", m["GIT_CONFIG_COUNT"])
 	assert.Equal(t, "http.https://github.com/.extraHeader", m["GIT_CONFIG_KEY_0"])
@@ -75,9 +84,26 @@ func TestGitTokenEnv_InjectsScopedAuthHeader(t *testing.T) {
 	assert.Equal(t, "x-access-token:"+token, string(decoded))
 }
 
+func TestGitTokenEnv_MultiHost(t *testing.T) {
+	m := envToMap(gitTokenEnv(map[string]string{
+		"github.com": "ghp_GITHUB",
+		"gitlab.com": "glpat_GITLAB",
+	}))
+
+	assert.Equal(t, "2", m["GIT_CONFIG_COUNT"])
+	// Hosts are sorted for deterministic indices: github.com < gitlab.com.
+	assert.Equal(t, "http.https://github.com/.extraHeader", m["GIT_CONFIG_KEY_0"])
+	assert.Equal(t, "http.https://gitlab.com/.extraHeader", m["GIT_CONFIG_KEY_1"])
+
+	const prefix = "Authorization: Basic "
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(m["GIT_CONFIG_VALUE_1"], prefix))
+	assert.NoError(t, err)
+	assert.Equal(t, "x-access-token:glpat_GITLAB", string(decoded))
+}
+
 func TestGitTokenEnv_NeverLeaksRawToken(t *testing.T) {
 	token := "ghp_SECRET"
-	for _, e := range gitTokenEnv(token) {
+	for _, e := range gitTokenEnv(map[string]string{"github.com": token}) {
 		assert.NotContains(t, e, token, "raw token leaked in env entry: %q", e)
 	}
 }

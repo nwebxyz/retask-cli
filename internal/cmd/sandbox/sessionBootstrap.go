@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -76,32 +77,47 @@ func deriveTargetDir(url string) string {
 	return strings.TrimSuffix(last, ".git")
 }
 
-// normalizeGithubURL rewrites SSH-style GitHub URLs to HTTPS so the github.com
-// auth header from gitTokenEnv applies. Non-GitHub and already-HTTPS URLs are
-// returned unchanged. The token is never placed in the URL.
-func normalizeGithubURL(rawURL string) string {
-	if strings.HasPrefix(rawURL, "git@github.com:") {
-		return "https://github.com/" + strings.TrimPrefix(rawURL, "git@github.com:")
+// normalizeGitRepoURL rewrites SSH scp-style git URLs (git@host:owner/repo) —
+// GitHub, GitLab, or any host — to their HTTPS form (https://host/owner/repo) so
+// the host-scoped auth header from gitTokenEnv applies. Already-HTTPS and other
+// URLs are returned unchanged. The token is never placed in the URL.
+func normalizeGitRepoURL(rawURL string) string {
+	if strings.HasPrefix(rawURL, "git@") {
+		if host, path, ok := strings.Cut(strings.TrimPrefix(rawURL, "git@"), ":"); ok {
+			return "https://" + host + "/" + path
+		}
 	}
 	return rawURL
 }
 
-// gitTokenEnv returns environment variables that inject a github.com-scoped
-// Authorization header into git via config (GIT_CONFIG_COUNT, added in git
-// 2.31). This keeps the token out of the clone URL, process arguments, terminal
-// output, and the cloned repo's .git/config — the token only ever lives in the
-// child process environment. Returns nil for an empty token.
-func gitTokenEnv(token string) []string {
-	if token == "" {
+// gitTokenEnv returns environment variables that inject host-scoped Authorization
+// headers into git via config (GIT_CONFIG_COUNT, added in git 2.31). This keeps
+// tokens out of the clone URL, process arguments, terminal output, and the cloned
+// repo's .git/config — a token only ever lives in the child process environment.
+// tokens maps a git host (e.g. "github.com") to its access token; hosts with an
+// empty token are skipped. Returns nil when no non-empty token is provided.
+func gitTokenEnv(tokens map[string]string) []string {
+	hosts := make([]string, 0, len(tokens))
+	for host, token := range tokens {
+		if token != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	if len(hosts) == 0 {
 		return nil
 	}
-	auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
-	return []string{
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader",
-		"GIT_CONFIG_VALUE_0=Authorization: Basic " + auth,
-		"GIT_TERMINAL_PROMPT=0", // never block on an interactive credential prompt
+	sort.Strings(hosts) // deterministic GIT_CONFIG_* indices
+
+	env := []string{fmt.Sprintf("GIT_CONFIG_COUNT=%d", len(hosts))}
+	for i, host := range hosts {
+		auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + tokens[host]))
+		env = append(env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=http.https://%s/.extraHeader", i, host),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", i, auth),
+		)
 	}
+	env = append(env, "GIT_TERMINAL_PROMPT=0") // never block on an interactive credential prompt
+	return env
 }
 
 // hostEnvDenylist are variables that must never be inherited from the host
@@ -271,24 +287,36 @@ func (b *SessionBootstrap) writeAgentConfigs(sessionDir string) error {
 	return os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(settings), 0o644)
 }
 
-func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Conn, sessionDir string) error {
-	githubToken := ""
+// gitToken returns the value of the first configured env var among keys (secret
+// value preferred over plain), or "" if none is set to a non-empty value.
+func (b *SessionBootstrap) gitToken(keys ...string) string {
+	want := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
 	for _, ev := range b.Config.GetEnvVars() {
-		if ev.GetKey() == "GITHUB_TOKEN" || ev.GetKey() == "GH_TOKEN" {
-			if s := ev.GetSecret(); s != nil && s.GetValue() != "" {
-				githubToken = s.GetValue()
-			} else {
-				githubToken = ev.GetPlain()
-			}
-			if githubToken != "" {
-				break
-			}
+		if !want[ev.GetKey()] {
+			continue
+		}
+		if s := ev.GetSecret(); s != nil && s.GetValue() != "" {
+			return s.GetValue()
+		}
+		if v := ev.GetPlain(); v != "" {
+			return v
 		}
 	}
-	if githubToken == "" {
-		writeTerm(ctx, conn, "[repos] Warning: no GITHUB_TOKEN / GH_TOKEN found — private repos may fail to clone\r\n")
+	return ""
+}
+
+func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Conn, sessionDir string) error {
+	tokens := map[string]string{
+		"github.com": b.gitToken("GITHUB_TOKEN", "GH_TOKEN"),
+		"gitlab.com": b.gitToken("GITLAB_TOKEN"),
 	}
-	tokenEnv := gitTokenEnv(githubToken)
+	if tokens["github.com"] == "" && tokens["gitlab.com"] == "" {
+		writeTerm(ctx, conn, "[repos] Warning: no GITHUB_TOKEN / GITLAB_TOKEN found — private repos may fail to clone\r\n")
+	}
+	tokenEnv := gitTokenEnv(tokens)
 
 	for _, repo := range b.Config.GetGitRepos() {
 		targetDir := repo.GetTargetDir()
@@ -300,7 +328,7 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 			branch = "main"
 		}
 		dest := filepath.Join(sessionDir, targetDir)
-		cloneURL := normalizeGithubURL(repo.GetUrl())
+		cloneURL := normalizeGitRepoURL(repo.GetUrl())
 
 		if err := b.cloneOrFetchWithRetry(ctx, conn, cloneURL, branch, dest, tokenEnv); err != nil {
 			return fmt.Errorf("clone %s: %w", repo.GetUrl(), err)

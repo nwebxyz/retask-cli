@@ -119,7 +119,7 @@ Flags:
   --task string                Required. Task ID whose comments to list
   --parent-comment-id string   List only replies under this comment ID (default: all comments)
   --sort string                Sort order: default, created-asc, created-desc
-  --created-by string          Filter by author member NRN (repeatable, format: nweb:workspace:member:<uuid>)
+  --created-by string          Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). Get yours from 'retask auth whoami' (user_nrn).
 
 Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, mentioned_member_nrns, attachments, is_edited, created_by_nrn, created_at, updated_at, user_access`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -140,11 +140,10 @@ Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, me
 				ParentCommentId: parentCommentID, // empty = no filter (all comments)
 			}
 			for _, c := range createdBy {
-				nrn, err := parseNrn(c)
-				if err != nil {
+				if _, err := parseNrn(c); err != nil {
 					return fmt.Errorf("invalid --created-by: %w", err)
 				}
-				filter.CreatedByNrns = append(filter.CreatedByNrns, nrn)
+				filter.CreatedByNrns = append(filter.CreatedByNrns, c)
 			}
 
 			svc, close, err := connect(gf)
@@ -165,7 +164,7 @@ Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, me
 	cmd.Flags().StringVar(&taskID, "task", "", "Task ID whose comments to list (required)")
 	cmd.Flags().StringVar(&parentCommentID, "parent-comment-id", "", "List only replies under this comment ID (default: all comments)")
 	cmd.Flags().StringVar(&sortStr, "sort", "", "Sort order: default, created-asc, created-desc")
-	cmd.Flags().StringArrayVar(&createdBy, "created-by", nil, "Filter by author member NRN (repeatable, format: nweb:workspace:member:<uuid>)")
+	cmd.Flags().StringArrayVar(&createdBy, "created-by", nil, "Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). From 'retask auth whoami'.")
 	return cmd
 }
 
@@ -367,9 +366,9 @@ Output fields: comment_id, attachments`,
 				return err
 			}
 			defer close()
-			resp, err := svc.AddCommentAttachment(context.Background(), connectrpc.NewRequest(&commentv1.AddCommentAttachmentRequest{
+			resp, err := svc.AddCommentAttachments(context.Background(), connectrpc.NewRequest(&commentv1.AddCommentAttachmentsRequest{
 				CommentId: args[0],
-				FileId:    args[1],
+				FileIds:   []string{args[1]},
 			}))
 			if err != nil {
 				return err
@@ -396,9 +395,9 @@ Output fields: comment_id, attachments`,
 				return err
 			}
 			defer close()
-			resp, err := svc.DeleteCommentAttachment(context.Background(), connectrpc.NewRequest(&commentv1.DeleteCommentAttachmentRequest{
+			resp, err := svc.DeleteCommentAttachments(context.Background(), connectrpc.NewRequest(&commentv1.DeleteCommentAttachmentsRequest{
 				CommentId: args[0],
-				FileId:    args[1],
+				FileIds:   []string{args[1]},
 			}))
 			if err != nil {
 				return err

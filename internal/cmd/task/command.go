@@ -500,9 +500,9 @@ Output fields: task_id, attachments`,
 				return err
 			}
 			defer close()
-			resp, err := svc.AddTaskAttachment(context.Background(), connectrpc.NewRequest(&taskv1.AddTaskAttachmentRequest{
-				TaskId: args[0],
-				FileId: args[1],
+			resp, err := svc.AddTaskAttachments(context.Background(), connectrpc.NewRequest(&taskv1.AddTaskAttachmentsRequest{
+				TaskId:  args[0],
+				FileIds: []string{args[1]},
 			}))
 			if err != nil {
 				return err
@@ -529,9 +529,9 @@ Output fields: task_id, attachments`,
 				return err
 			}
 			defer close()
-			resp, err := svc.DeleteTaskAttachment(context.Background(), connectrpc.NewRequest(&taskv1.DeleteTaskAttachmentRequest{
-				TaskId: args[0],
-				FileId: args[1],
+			resp, err := svc.DeleteTaskAttachments(context.Background(), connectrpc.NewRequest(&taskv1.DeleteTaskAttachmentsRequest{
+				TaskId:  args[0],
+				FileIds: []string{args[1]},
 			}))
 			if err != nil {
 				return err
