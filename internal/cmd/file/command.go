@@ -59,21 +59,25 @@ func connect(gf *flags.Global) (filev1connect.FileServiceClient, func(), error) 
 // ── file list ──────────────────────────────────────────────────────────────
 
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var projectID string
+	var target string
+	var createdBy []string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List files",
-		Long: `List files, optionally filtered by project.
+		Long: `List files in the current workspace, optionally filtered by the resource they
+are attached to or by their author.
 
 Usage examples:
   retask file list
-  retask file list --project-id proj_abc123
+  retask file list --target nweb:retask-task:task:task_abc123
+  retask file list --created-by nweb:auth:user:<id>
   retask file list --pretty
 
 Flags:
-  --project-id string  Filter files by project ID
+  --target string      Filter by the resource the file is attached to (NRN)
+  --created-by string  Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). Get yours from 'retask auth whoami' (user_nrn).
 
-Output fields: file_id, project_id, file_name, mime_type, bytes, created_at`,
+Output fields: file_id, workspace_id, type, target_nrn, file_name, mime_type, bytes, created_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, close, err := connect(gf)
 			if err != nil {
@@ -81,21 +85,21 @@ Output fields: file_id, project_id, file_name, mime_type, bytes, created_at`,
 			}
 			defer close()
 
-			req := &filev1.FilesRequest{}
-			if projectID != "" {
-				req.Filter = &filev1.FilesRequest_Filter{
-					ProjectId: projectID,
-				}
-			}
-
-			resp, err := svc.GetFiles(context.Background(), connectrpc.NewRequest(req))
+			resp, err := svc.GetFiles(context.Background(), connectrpc.NewRequest(&filev1.FilesRequest{
+				Filter: &filev1.FilesRequest_Filter{
+					WorkspaceId:   gf.WorkspaceID,
+					TargetNrn:     target,
+					CreatedByNrns: createdBy,
+				},
+			}))
 			if err != nil {
 				return err
 			}
 			return output.Print(gf.Pretty, resp.Msg.Files)
 		},
 	}
-	cmd.Flags().StringVar(&projectID, "project-id", "", "Filter files by project ID")
+	cmd.Flags().StringVar(&target, "target", "", "Filter by the resource the file is attached to (NRN)")
+	cmd.Flags().StringArrayVar(&createdBy, "created-by", nil, "Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). From 'retask auth whoami'.")
 	return cmd
 }
 
@@ -110,7 +114,7 @@ func newGetCommand(gf *flags.Global) *cobra.Command {
 Usage example:
   retask file get file_abc123
 
-Output fields: file_id, project_id, file_name, mime_type, bytes, storage_path, created_at, updated_at`,
+Output fields: file_id, workspace_id, type, target_nrn, file_name, mime_type, bytes, storage_path, created_at, updated_at`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, close, err := connect(gf)

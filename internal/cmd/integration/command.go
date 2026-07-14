@@ -30,6 +30,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 		newSetCommand(gf),
 		newDeleteCommand(gf),
 		newGithubCommand(gf),
+		newGitlabCommand(gf),
 	)
 	return cmd
 }
@@ -337,6 +338,65 @@ Output fields: name, clone_url, default_branch, private`,
 			defer close()
 
 			resp, err := svc.GetGithubRepos(context.Background(), connectrpc.NewRequest(req))
+			if err != nil {
+				return err
+			}
+			return output.Print(gf.Pretty, resp.Msg.Repos)
+		},
+	}
+	cmd.Flags().StringVar(&levelStr, "level", "", "Integration level: LEVEL_WORKSPACE, LEVEL_MEMBER")
+	return cmd
+}
+
+// ── integration gitlab ────────────────────────────────────────────────────────
+
+func newGitlabCommand(gf *flags.Global) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gitlab",
+		Short: "GitLab-specific integration commands",
+	}
+	cmd.AddCommand(newGitlabReposCommand(gf))
+	return cmd
+}
+
+func newGitlabReposCommand(gf *flags.Global) *cobra.Command {
+	var levelStr string
+	cmd := &cobra.Command{
+		Use:   "repos",
+		Short: "List GitLab repositories accessible via the caller's integration",
+		Long: `Resolve the caller's GitLab integration and return the repository catalog.
+If --level is set, uses that integration exactly; otherwise defaults to
+MEMBER-first with WORKSPACE fallback.
+
+Usage examples:
+  retask integration gitlab repos
+  retask integration gitlab repos --level LEVEL_WORKSPACE
+  retask integration gitlab repos --pretty
+
+Flags:
+  --level string  Optional. Integration level to use: LEVEL_WORKSPACE, LEVEL_MEMBER
+
+Output fields: name, clone_url, default_branch, private`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req := &integrationv1.GitlabReposRequest{
+				WorkspaceId: gf.WorkspaceID,
+			}
+
+			if cmd.Flags().Changed("level") {
+				levelVal, ok := integrationv1.Integration_Level_value[levelStr]
+				if !ok {
+					return fmt.Errorf("invalid --level %q. Valid values: LEVEL_WORKSPACE, LEVEL_MEMBER", levelStr)
+				}
+				req.Level = integrationv1.Integration_Level(levelVal)
+			}
+
+			svc, close, err := connect(gf)
+			if err != nil {
+				return err
+			}
+			defer close()
+
+			resp, err := svc.GetGitlabRepos(context.Background(), connectrpc.NewRequest(req))
 			if err != nil {
 				return err
 			}

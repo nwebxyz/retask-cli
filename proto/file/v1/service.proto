@@ -28,16 +28,18 @@ service FileService {
 
 message FilesRequest {
   message Filter {
-    repeated string file_ids = 1;
-    string project_id = 2;
-    string thread_id = 3;
+    string workspace_id = 1;
+    repeated string file_ids = 2;
+    string target_nrn = 3;
+    repeated File.Type types = 4; // multi-select
+    repeated string created_by_nrns = 5;
   }
   enum Sort {
-    DEFAULT = 0;
-    DATE_A = 1;
-    DATE_D = 2;
-    SIZE_A = 3;
-    SIZE_D = 4;
+    SORT_DEFAULT = 0;
+    SORT_DATE_ASC = 1;
+    SORT_DATE_DESC = 2;
+    SORT_SIZE_ASC = 3;
+    SORT_SIZE_DESC = 4;
   }
 
   Filter filter = 1;
@@ -57,12 +59,11 @@ message FileSignedUrlRequest {
 message FileSignedUrlResponse {
   string file_id = 1;
   string signed_url = 2;
-  google.protobuf.Timestamp expires_at = 12;
+  google.protobuf.Timestamp expires_at = 3;
 }
 
 message FileDetailsRequest {
   string file_id = 1;
   bool with_data = 2;
-  bool with_data_if_no_ocr = 3;
-  bool with_ocr_content = 4;
+  // OCR output is a normal File — fetch it via GetFile(ocr_file_id).
 }

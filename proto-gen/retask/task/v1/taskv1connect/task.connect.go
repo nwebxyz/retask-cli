@@ -50,12 +50,12 @@ const (
 	// TaskServiceSetPartialTaskProcedure is the fully-qualified name of the TaskService's
 	// SetPartialTask RPC.
 	TaskServiceSetPartialTaskProcedure = "/retask.task.v1.TaskService/SetPartialTask"
-	// TaskServiceAddTaskAttachmentProcedure is the fully-qualified name of the TaskService's
-	// AddTaskAttachment RPC.
-	TaskServiceAddTaskAttachmentProcedure = "/retask.task.v1.TaskService/AddTaskAttachment"
-	// TaskServiceDeleteTaskAttachmentProcedure is the fully-qualified name of the TaskService's
-	// DeleteTaskAttachment RPC.
-	TaskServiceDeleteTaskAttachmentProcedure = "/retask.task.v1.TaskService/DeleteTaskAttachment"
+	// TaskServiceAddTaskAttachmentsProcedure is the fully-qualified name of the TaskService's
+	// AddTaskAttachments RPC.
+	TaskServiceAddTaskAttachmentsProcedure = "/retask.task.v1.TaskService/AddTaskAttachments"
+	// TaskServiceDeleteTaskAttachmentsProcedure is the fully-qualified name of the TaskService's
+	// DeleteTaskAttachments RPC.
+	TaskServiceDeleteTaskAttachmentsProcedure = "/retask.task.v1.TaskService/DeleteTaskAttachments"
 	// TaskServiceGetTasksUsageProcedure is the fully-qualified name of the TaskService's GetTasksUsage
 	// RPC.
 	TaskServiceGetTasksUsageProcedure = "/retask.task.v1.TaskService/GetTasksUsage"
@@ -66,17 +66,17 @@ const (
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
-	taskServiceServiceDescriptor                    = v1.File_retask_task_v1_task_proto.Services().ByName("TaskService")
-	taskServiceGetTasksMethodDescriptor             = taskServiceServiceDescriptor.Methods().ByName("GetTasks")
-	taskServiceGetTaskMethodDescriptor              = taskServiceServiceDescriptor.Methods().ByName("GetTask")
-	taskServiceGetTaskByKeyMethodDescriptor         = taskServiceServiceDescriptor.Methods().ByName("GetTaskByKey")
-	taskServiceSetTaskMethodDescriptor              = taskServiceServiceDescriptor.Methods().ByName("SetTask")
-	taskServiceDeleteTaskMethodDescriptor           = taskServiceServiceDescriptor.Methods().ByName("DeleteTask")
-	taskServiceSetPartialTaskMethodDescriptor       = taskServiceServiceDescriptor.Methods().ByName("SetPartialTask")
-	taskServiceAddTaskAttachmentMethodDescriptor    = taskServiceServiceDescriptor.Methods().ByName("AddTaskAttachment")
-	taskServiceDeleteTaskAttachmentMethodDescriptor = taskServiceServiceDescriptor.Methods().ByName("DeleteTaskAttachment")
-	taskServiceGetTasksUsageMethodDescriptor        = taskServiceServiceDescriptor.Methods().ByName("GetTasksUsage")
-	taskServiceCheckTaskPermissionsMethodDescriptor = taskServiceServiceDescriptor.Methods().ByName("CheckTaskPermissions")
+	taskServiceServiceDescriptor                     = v1.File_retask_task_v1_task_proto.Services().ByName("TaskService")
+	taskServiceGetTasksMethodDescriptor              = taskServiceServiceDescriptor.Methods().ByName("GetTasks")
+	taskServiceGetTaskMethodDescriptor               = taskServiceServiceDescriptor.Methods().ByName("GetTask")
+	taskServiceGetTaskByKeyMethodDescriptor          = taskServiceServiceDescriptor.Methods().ByName("GetTaskByKey")
+	taskServiceSetTaskMethodDescriptor               = taskServiceServiceDescriptor.Methods().ByName("SetTask")
+	taskServiceDeleteTaskMethodDescriptor            = taskServiceServiceDescriptor.Methods().ByName("DeleteTask")
+	taskServiceSetPartialTaskMethodDescriptor        = taskServiceServiceDescriptor.Methods().ByName("SetPartialTask")
+	taskServiceAddTaskAttachmentsMethodDescriptor    = taskServiceServiceDescriptor.Methods().ByName("AddTaskAttachments")
+	taskServiceDeleteTaskAttachmentsMethodDescriptor = taskServiceServiceDescriptor.Methods().ByName("DeleteTaskAttachments")
+	taskServiceGetTasksUsageMethodDescriptor         = taskServiceServiceDescriptor.Methods().ByName("GetTasksUsage")
+	taskServiceCheckTaskPermissionsMethodDescriptor  = taskServiceServiceDescriptor.Methods().ByName("CheckTaskPermissions")
 )
 
 // TaskServiceClient is a client for the retask.task.v1.TaskService service.
@@ -87,8 +87,8 @@ type TaskServiceClient interface {
 	SetTask(context.Context, *connect.Request[v1.Task]) (*connect.Response[v11.Id], error)
 	DeleteTask(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
 	SetPartialTask(context.Context, *connect.Request[v11.PartialData]) (*connect.Response[v11.Id], error)
-	AddTaskAttachment(context.Context, *connect.Request[v1.AddTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
-	DeleteTaskAttachment(context.Context, *connect.Request[v1.DeleteTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
+	AddTaskAttachments(context.Context, *connect.Request[v1.AddTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error)
+	DeleteTaskAttachments(context.Context, *connect.Request[v1.DeleteTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error)
 	GetTasksUsage(context.Context, *connect.Request[v1.TasksUsageRequest]) (*connect.Response[v1.TasksUsage], error)
 	CheckTaskPermissions(context.Context, *connect.Request[v1.CheckTaskPermissionsRequest]) (*connect.Response[v1.CheckTaskPermissionsResponse], error)
 }
@@ -139,16 +139,16 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(taskServiceSetPartialTaskMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		addTaskAttachment: connect.NewClient[v1.AddTaskAttachmentRequest, v1.Task](
+		addTaskAttachments: connect.NewClient[v1.AddTaskAttachmentsRequest, v1.TaskAttachmentsResponse](
 			httpClient,
-			baseURL+TaskServiceAddTaskAttachmentProcedure,
-			connect.WithSchema(taskServiceAddTaskAttachmentMethodDescriptor),
+			baseURL+TaskServiceAddTaskAttachmentsProcedure,
+			connect.WithSchema(taskServiceAddTaskAttachmentsMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		deleteTaskAttachment: connect.NewClient[v1.DeleteTaskAttachmentRequest, v1.Task](
+		deleteTaskAttachments: connect.NewClient[v1.DeleteTaskAttachmentsRequest, v1.TaskAttachmentsResponse](
 			httpClient,
-			baseURL+TaskServiceDeleteTaskAttachmentProcedure,
-			connect.WithSchema(taskServiceDeleteTaskAttachmentMethodDescriptor),
+			baseURL+TaskServiceDeleteTaskAttachmentsProcedure,
+			connect.WithSchema(taskServiceDeleteTaskAttachmentsMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
 		getTasksUsage: connect.NewClient[v1.TasksUsageRequest, v1.TasksUsage](
@@ -168,16 +168,16 @@ func NewTaskServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // taskServiceClient implements TaskServiceClient.
 type taskServiceClient struct {
-	getTasks             *connect.Client[v1.TasksRequest, v1.TasksResponse]
-	getTask              *connect.Client[v11.Id, v1.Task]
-	getTaskByKey         *connect.Client[v1.TaskByKeyRequest, v1.Task]
-	setTask              *connect.Client[v1.Task, v11.Id]
-	deleteTask           *connect.Client[v11.Id, v11.Empty]
-	setPartialTask       *connect.Client[v11.PartialData, v11.Id]
-	addTaskAttachment    *connect.Client[v1.AddTaskAttachmentRequest, v1.Task]
-	deleteTaskAttachment *connect.Client[v1.DeleteTaskAttachmentRequest, v1.Task]
-	getTasksUsage        *connect.Client[v1.TasksUsageRequest, v1.TasksUsage]
-	checkTaskPermissions *connect.Client[v1.CheckTaskPermissionsRequest, v1.CheckTaskPermissionsResponse]
+	getTasks              *connect.Client[v1.TasksRequest, v1.TasksResponse]
+	getTask               *connect.Client[v11.Id, v1.Task]
+	getTaskByKey          *connect.Client[v1.TaskByKeyRequest, v1.Task]
+	setTask               *connect.Client[v1.Task, v11.Id]
+	deleteTask            *connect.Client[v11.Id, v11.Empty]
+	setPartialTask        *connect.Client[v11.PartialData, v11.Id]
+	addTaskAttachments    *connect.Client[v1.AddTaskAttachmentsRequest, v1.TaskAttachmentsResponse]
+	deleteTaskAttachments *connect.Client[v1.DeleteTaskAttachmentsRequest, v1.TaskAttachmentsResponse]
+	getTasksUsage         *connect.Client[v1.TasksUsageRequest, v1.TasksUsage]
+	checkTaskPermissions  *connect.Client[v1.CheckTaskPermissionsRequest, v1.CheckTaskPermissionsResponse]
 }
 
 // GetTasks calls retask.task.v1.TaskService.GetTasks.
@@ -210,14 +210,14 @@ func (c *taskServiceClient) SetPartialTask(ctx context.Context, req *connect.Req
 	return c.setPartialTask.CallUnary(ctx, req)
 }
 
-// AddTaskAttachment calls retask.task.v1.TaskService.AddTaskAttachment.
-func (c *taskServiceClient) AddTaskAttachment(ctx context.Context, req *connect.Request[v1.AddTaskAttachmentRequest]) (*connect.Response[v1.Task], error) {
-	return c.addTaskAttachment.CallUnary(ctx, req)
+// AddTaskAttachments calls retask.task.v1.TaskService.AddTaskAttachments.
+func (c *taskServiceClient) AddTaskAttachments(ctx context.Context, req *connect.Request[v1.AddTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error) {
+	return c.addTaskAttachments.CallUnary(ctx, req)
 }
 
-// DeleteTaskAttachment calls retask.task.v1.TaskService.DeleteTaskAttachment.
-func (c *taskServiceClient) DeleteTaskAttachment(ctx context.Context, req *connect.Request[v1.DeleteTaskAttachmentRequest]) (*connect.Response[v1.Task], error) {
-	return c.deleteTaskAttachment.CallUnary(ctx, req)
+// DeleteTaskAttachments calls retask.task.v1.TaskService.DeleteTaskAttachments.
+func (c *taskServiceClient) DeleteTaskAttachments(ctx context.Context, req *connect.Request[v1.DeleteTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error) {
+	return c.deleteTaskAttachments.CallUnary(ctx, req)
 }
 
 // GetTasksUsage calls retask.task.v1.TaskService.GetTasksUsage.
@@ -238,8 +238,8 @@ type TaskServiceHandler interface {
 	SetTask(context.Context, *connect.Request[v1.Task]) (*connect.Response[v11.Id], error)
 	DeleteTask(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
 	SetPartialTask(context.Context, *connect.Request[v11.PartialData]) (*connect.Response[v11.Id], error)
-	AddTaskAttachment(context.Context, *connect.Request[v1.AddTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
-	DeleteTaskAttachment(context.Context, *connect.Request[v1.DeleteTaskAttachmentRequest]) (*connect.Response[v1.Task], error)
+	AddTaskAttachments(context.Context, *connect.Request[v1.AddTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error)
+	DeleteTaskAttachments(context.Context, *connect.Request[v1.DeleteTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error)
 	GetTasksUsage(context.Context, *connect.Request[v1.TasksUsageRequest]) (*connect.Response[v1.TasksUsage], error)
 	CheckTaskPermissions(context.Context, *connect.Request[v1.CheckTaskPermissionsRequest]) (*connect.Response[v1.CheckTaskPermissionsResponse], error)
 }
@@ -286,16 +286,16 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(taskServiceSetPartialTaskMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
-	taskServiceAddTaskAttachmentHandler := connect.NewUnaryHandler(
-		TaskServiceAddTaskAttachmentProcedure,
-		svc.AddTaskAttachment,
-		connect.WithSchema(taskServiceAddTaskAttachmentMethodDescriptor),
+	taskServiceAddTaskAttachmentsHandler := connect.NewUnaryHandler(
+		TaskServiceAddTaskAttachmentsProcedure,
+		svc.AddTaskAttachments,
+		connect.WithSchema(taskServiceAddTaskAttachmentsMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
-	taskServiceDeleteTaskAttachmentHandler := connect.NewUnaryHandler(
-		TaskServiceDeleteTaskAttachmentProcedure,
-		svc.DeleteTaskAttachment,
-		connect.WithSchema(taskServiceDeleteTaskAttachmentMethodDescriptor),
+	taskServiceDeleteTaskAttachmentsHandler := connect.NewUnaryHandler(
+		TaskServiceDeleteTaskAttachmentsProcedure,
+		svc.DeleteTaskAttachments,
+		connect.WithSchema(taskServiceDeleteTaskAttachmentsMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
 	taskServiceGetTasksUsageHandler := connect.NewUnaryHandler(
@@ -324,10 +324,10 @@ func NewTaskServiceHandler(svc TaskServiceHandler, opts ...connect.HandlerOption
 			taskServiceDeleteTaskHandler.ServeHTTP(w, r)
 		case TaskServiceSetPartialTaskProcedure:
 			taskServiceSetPartialTaskHandler.ServeHTTP(w, r)
-		case TaskServiceAddTaskAttachmentProcedure:
-			taskServiceAddTaskAttachmentHandler.ServeHTTP(w, r)
-		case TaskServiceDeleteTaskAttachmentProcedure:
-			taskServiceDeleteTaskAttachmentHandler.ServeHTTP(w, r)
+		case TaskServiceAddTaskAttachmentsProcedure:
+			taskServiceAddTaskAttachmentsHandler.ServeHTTP(w, r)
+		case TaskServiceDeleteTaskAttachmentsProcedure:
+			taskServiceDeleteTaskAttachmentsHandler.ServeHTTP(w, r)
 		case TaskServiceGetTasksUsageProcedure:
 			taskServiceGetTasksUsageHandler.ServeHTTP(w, r)
 		case TaskServiceCheckTaskPermissionsProcedure:
@@ -365,12 +365,12 @@ func (UnimplementedTaskServiceHandler) SetPartialTask(context.Context, *connect.
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.SetPartialTask is not implemented"))
 }
 
-func (UnimplementedTaskServiceHandler) AddTaskAttachment(context.Context, *connect.Request[v1.AddTaskAttachmentRequest]) (*connect.Response[v1.Task], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.AddTaskAttachment is not implemented"))
+func (UnimplementedTaskServiceHandler) AddTaskAttachments(context.Context, *connect.Request[v1.AddTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.AddTaskAttachments is not implemented"))
 }
 
-func (UnimplementedTaskServiceHandler) DeleteTaskAttachment(context.Context, *connect.Request[v1.DeleteTaskAttachmentRequest]) (*connect.Response[v1.Task], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.DeleteTaskAttachment is not implemented"))
+func (UnimplementedTaskServiceHandler) DeleteTaskAttachments(context.Context, *connect.Request[v1.DeleteTaskAttachmentsRequest]) (*connect.Response[v1.TaskAttachmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("retask.task.v1.TaskService.DeleteTaskAttachments is not implemented"))
 }
 
 func (UnimplementedTaskServiceHandler) GetTasksUsage(context.Context, *connect.Request[v1.TasksUsageRequest]) (*connect.Response[v1.TasksUsage], error) {

@@ -48,23 +48,23 @@ const (
 	// CommentServiceDeleteCommentProcedure is the fully-qualified name of the CommentService's
 	// DeleteComment RPC.
 	CommentServiceDeleteCommentProcedure = "/comment.v1.CommentService/DeleteComment"
-	// CommentServiceAddCommentAttachmentProcedure is the fully-qualified name of the CommentService's
-	// AddCommentAttachment RPC.
-	CommentServiceAddCommentAttachmentProcedure = "/comment.v1.CommentService/AddCommentAttachment"
-	// CommentServiceDeleteCommentAttachmentProcedure is the fully-qualified name of the
-	// CommentService's DeleteCommentAttachment RPC.
-	CommentServiceDeleteCommentAttachmentProcedure = "/comment.v1.CommentService/DeleteCommentAttachment"
+	// CommentServiceAddCommentAttachmentsProcedure is the fully-qualified name of the CommentService's
+	// AddCommentAttachments RPC.
+	CommentServiceAddCommentAttachmentsProcedure = "/comment.v1.CommentService/AddCommentAttachments"
+	// CommentServiceDeleteCommentAttachmentsProcedure is the fully-qualified name of the
+	// CommentService's DeleteCommentAttachments RPC.
+	CommentServiceDeleteCommentAttachmentsProcedure = "/comment.v1.CommentService/DeleteCommentAttachments"
 )
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
-	commentServiceServiceDescriptor                       = v1.File_comment_v1_comment_proto.Services().ByName("CommentService")
-	commentServiceGetCommentsMethodDescriptor             = commentServiceServiceDescriptor.Methods().ByName("GetComments")
-	commentServiceGetCommentMethodDescriptor              = commentServiceServiceDescriptor.Methods().ByName("GetComment")
-	commentServiceSetCommentMethodDescriptor              = commentServiceServiceDescriptor.Methods().ByName("SetComment")
-	commentServiceDeleteCommentMethodDescriptor           = commentServiceServiceDescriptor.Methods().ByName("DeleteComment")
-	commentServiceAddCommentAttachmentMethodDescriptor    = commentServiceServiceDescriptor.Methods().ByName("AddCommentAttachment")
-	commentServiceDeleteCommentAttachmentMethodDescriptor = commentServiceServiceDescriptor.Methods().ByName("DeleteCommentAttachment")
+	commentServiceServiceDescriptor                        = v1.File_comment_v1_comment_proto.Services().ByName("CommentService")
+	commentServiceGetCommentsMethodDescriptor              = commentServiceServiceDescriptor.Methods().ByName("GetComments")
+	commentServiceGetCommentMethodDescriptor               = commentServiceServiceDescriptor.Methods().ByName("GetComment")
+	commentServiceSetCommentMethodDescriptor               = commentServiceServiceDescriptor.Methods().ByName("SetComment")
+	commentServiceDeleteCommentMethodDescriptor            = commentServiceServiceDescriptor.Methods().ByName("DeleteComment")
+	commentServiceAddCommentAttachmentsMethodDescriptor    = commentServiceServiceDescriptor.Methods().ByName("AddCommentAttachments")
+	commentServiceDeleteCommentAttachmentsMethodDescriptor = commentServiceServiceDescriptor.Methods().ByName("DeleteCommentAttachments")
 )
 
 // CommentServiceClient is a client for the comment.v1.CommentService service.
@@ -73,8 +73,8 @@ type CommentServiceClient interface {
 	GetComment(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.Comment], error)
 	SetComment(context.Context, *connect.Request[v1.Comment]) (*connect.Response[v11.Id], error)
 	DeleteComment(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
-	AddCommentAttachment(context.Context, *connect.Request[v1.AddCommentAttachmentRequest]) (*connect.Response[v1.Comment], error)
-	DeleteCommentAttachment(context.Context, *connect.Request[v1.DeleteCommentAttachmentRequest]) (*connect.Response[v1.Comment], error)
+	AddCommentAttachments(context.Context, *connect.Request[v1.AddCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error)
+	DeleteCommentAttachments(context.Context, *connect.Request[v1.DeleteCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error)
 }
 
 // NewCommentServiceClient constructs a client for the comment.v1.CommentService service. By
@@ -111,16 +111,16 @@ func NewCommentServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(commentServiceDeleteCommentMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		addCommentAttachment: connect.NewClient[v1.AddCommentAttachmentRequest, v1.Comment](
+		addCommentAttachments: connect.NewClient[v1.AddCommentAttachmentsRequest, v1.CommentAttachmentsResponse](
 			httpClient,
-			baseURL+CommentServiceAddCommentAttachmentProcedure,
-			connect.WithSchema(commentServiceAddCommentAttachmentMethodDescriptor),
+			baseURL+CommentServiceAddCommentAttachmentsProcedure,
+			connect.WithSchema(commentServiceAddCommentAttachmentsMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		deleteCommentAttachment: connect.NewClient[v1.DeleteCommentAttachmentRequest, v1.Comment](
+		deleteCommentAttachments: connect.NewClient[v1.DeleteCommentAttachmentsRequest, v1.CommentAttachmentsResponse](
 			httpClient,
-			baseURL+CommentServiceDeleteCommentAttachmentProcedure,
-			connect.WithSchema(commentServiceDeleteCommentAttachmentMethodDescriptor),
+			baseURL+CommentServiceDeleteCommentAttachmentsProcedure,
+			connect.WithSchema(commentServiceDeleteCommentAttachmentsMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -128,12 +128,12 @@ func NewCommentServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // commentServiceClient implements CommentServiceClient.
 type commentServiceClient struct {
-	getComments             *connect.Client[v1.CommentsRequest, v1.CommentsResponse]
-	getComment              *connect.Client[v11.Id, v1.Comment]
-	setComment              *connect.Client[v1.Comment, v11.Id]
-	deleteComment           *connect.Client[v11.Id, v11.Empty]
-	addCommentAttachment    *connect.Client[v1.AddCommentAttachmentRequest, v1.Comment]
-	deleteCommentAttachment *connect.Client[v1.DeleteCommentAttachmentRequest, v1.Comment]
+	getComments              *connect.Client[v1.CommentsRequest, v1.CommentsResponse]
+	getComment               *connect.Client[v11.Id, v1.Comment]
+	setComment               *connect.Client[v1.Comment, v11.Id]
+	deleteComment            *connect.Client[v11.Id, v11.Empty]
+	addCommentAttachments    *connect.Client[v1.AddCommentAttachmentsRequest, v1.CommentAttachmentsResponse]
+	deleteCommentAttachments *connect.Client[v1.DeleteCommentAttachmentsRequest, v1.CommentAttachmentsResponse]
 }
 
 // GetComments calls comment.v1.CommentService.GetComments.
@@ -156,14 +156,14 @@ func (c *commentServiceClient) DeleteComment(ctx context.Context, req *connect.R
 	return c.deleteComment.CallUnary(ctx, req)
 }
 
-// AddCommentAttachment calls comment.v1.CommentService.AddCommentAttachment.
-func (c *commentServiceClient) AddCommentAttachment(ctx context.Context, req *connect.Request[v1.AddCommentAttachmentRequest]) (*connect.Response[v1.Comment], error) {
-	return c.addCommentAttachment.CallUnary(ctx, req)
+// AddCommentAttachments calls comment.v1.CommentService.AddCommentAttachments.
+func (c *commentServiceClient) AddCommentAttachments(ctx context.Context, req *connect.Request[v1.AddCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error) {
+	return c.addCommentAttachments.CallUnary(ctx, req)
 }
 
-// DeleteCommentAttachment calls comment.v1.CommentService.DeleteCommentAttachment.
-func (c *commentServiceClient) DeleteCommentAttachment(ctx context.Context, req *connect.Request[v1.DeleteCommentAttachmentRequest]) (*connect.Response[v1.Comment], error) {
-	return c.deleteCommentAttachment.CallUnary(ctx, req)
+// DeleteCommentAttachments calls comment.v1.CommentService.DeleteCommentAttachments.
+func (c *commentServiceClient) DeleteCommentAttachments(ctx context.Context, req *connect.Request[v1.DeleteCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error) {
+	return c.deleteCommentAttachments.CallUnary(ctx, req)
 }
 
 // CommentServiceHandler is an implementation of the comment.v1.CommentService service.
@@ -172,8 +172,8 @@ type CommentServiceHandler interface {
 	GetComment(context.Context, *connect.Request[v11.Id]) (*connect.Response[v1.Comment], error)
 	SetComment(context.Context, *connect.Request[v1.Comment]) (*connect.Response[v11.Id], error)
 	DeleteComment(context.Context, *connect.Request[v11.Id]) (*connect.Response[v11.Empty], error)
-	AddCommentAttachment(context.Context, *connect.Request[v1.AddCommentAttachmentRequest]) (*connect.Response[v1.Comment], error)
-	DeleteCommentAttachment(context.Context, *connect.Request[v1.DeleteCommentAttachmentRequest]) (*connect.Response[v1.Comment], error)
+	AddCommentAttachments(context.Context, *connect.Request[v1.AddCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error)
+	DeleteCommentAttachments(context.Context, *connect.Request[v1.DeleteCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error)
 }
 
 // NewCommentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -206,16 +206,16 @@ func NewCommentServiceHandler(svc CommentServiceHandler, opts ...connect.Handler
 		connect.WithSchema(commentServiceDeleteCommentMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
-	commentServiceAddCommentAttachmentHandler := connect.NewUnaryHandler(
-		CommentServiceAddCommentAttachmentProcedure,
-		svc.AddCommentAttachment,
-		connect.WithSchema(commentServiceAddCommentAttachmentMethodDescriptor),
+	commentServiceAddCommentAttachmentsHandler := connect.NewUnaryHandler(
+		CommentServiceAddCommentAttachmentsProcedure,
+		svc.AddCommentAttachments,
+		connect.WithSchema(commentServiceAddCommentAttachmentsMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
-	commentServiceDeleteCommentAttachmentHandler := connect.NewUnaryHandler(
-		CommentServiceDeleteCommentAttachmentProcedure,
-		svc.DeleteCommentAttachment,
-		connect.WithSchema(commentServiceDeleteCommentAttachmentMethodDescriptor),
+	commentServiceDeleteCommentAttachmentsHandler := connect.NewUnaryHandler(
+		CommentServiceDeleteCommentAttachmentsProcedure,
+		svc.DeleteCommentAttachments,
+		connect.WithSchema(commentServiceDeleteCommentAttachmentsMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/comment.v1.CommentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -228,10 +228,10 @@ func NewCommentServiceHandler(svc CommentServiceHandler, opts ...connect.Handler
 			commentServiceSetCommentHandler.ServeHTTP(w, r)
 		case CommentServiceDeleteCommentProcedure:
 			commentServiceDeleteCommentHandler.ServeHTTP(w, r)
-		case CommentServiceAddCommentAttachmentProcedure:
-			commentServiceAddCommentAttachmentHandler.ServeHTTP(w, r)
-		case CommentServiceDeleteCommentAttachmentProcedure:
-			commentServiceDeleteCommentAttachmentHandler.ServeHTTP(w, r)
+		case CommentServiceAddCommentAttachmentsProcedure:
+			commentServiceAddCommentAttachmentsHandler.ServeHTTP(w, r)
+		case CommentServiceDeleteCommentAttachmentsProcedure:
+			commentServiceDeleteCommentAttachmentsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -257,10 +257,10 @@ func (UnimplementedCommentServiceHandler) DeleteComment(context.Context, *connec
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("comment.v1.CommentService.DeleteComment is not implemented"))
 }
 
-func (UnimplementedCommentServiceHandler) AddCommentAttachment(context.Context, *connect.Request[v1.AddCommentAttachmentRequest]) (*connect.Response[v1.Comment], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("comment.v1.CommentService.AddCommentAttachment is not implemented"))
+func (UnimplementedCommentServiceHandler) AddCommentAttachments(context.Context, *connect.Request[v1.AddCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("comment.v1.CommentService.AddCommentAttachments is not implemented"))
 }
 
-func (UnimplementedCommentServiceHandler) DeleteCommentAttachment(context.Context, *connect.Request[v1.DeleteCommentAttachmentRequest]) (*connect.Response[v1.Comment], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("comment.v1.CommentService.DeleteCommentAttachment is not implemented"))
+func (UnimplementedCommentServiceHandler) DeleteCommentAttachments(context.Context, *connect.Request[v1.DeleteCommentAttachmentsRequest]) (*connect.Response[v1.CommentAttachmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("comment.v1.CommentService.DeleteCommentAttachments is not implemented"))
 }

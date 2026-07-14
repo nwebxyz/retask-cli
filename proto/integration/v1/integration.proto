@@ -59,8 +59,8 @@ message Provider {
 // GitRepo
 // ============================================================================
 
-// Provider-neutral git repository clone config. Used by GithubSettings
-// (and future GitlabSettings, etc.) and by retask.sandbox.v1.Sandbox.Config.
+// Provider-neutral git repository clone config. Used by GithubSettings,
+// GitlabSettings, etc. and by retask.sandbox.v1.Sandbox.Config.
 message GitRepo {
   // @inject_tag: bson:"url"
   string url        = 1;   // clone URL — used as key to match
@@ -84,6 +84,25 @@ message GithubSettings {
   }
   // @inject_tag: bson:"repos"
   // Empty means no GitHub repo access. When non-empty, AccessIntegration
+  // returns only enabled entries; sandbox clones them using the configured
+  // branch and target_dir.
+  repeated RepoSettings repos = 1;
+}
+
+// ============================================================================
+// GitlabSettings
+// ============================================================================
+
+// Provider-specific settings for GitLab integrations.
+message GitlabSettings {
+  message RepoSettings {
+    // @inject_tag: bson:"git_repo"
+    GitRepo git_repo = 1;
+    // @inject_tag: bson:"enabled"
+    bool    enabled  = 2;
+  }
+  // @inject_tag: bson:"repos"
+  // Empty means no GitLab repo access. When non-empty, AccessIntegration
   // returns only enabled entries; sandbox clones them using the configured
   // branch and target_dir.
   repeated RepoSettings repos = 1;
@@ -208,6 +227,7 @@ message Integration {
   // @inject_tag: bson:"provider_settings,omitempty"
   oneof provider_settings {
     GithubSettings github = 17;
+    GitlabSettings gitlab = 18;
   }
 }
 
@@ -329,6 +349,15 @@ service IntegrationService {
   rpc GetGithubRepos(GithubReposRequest) returns (GithubReposResponse) {
     option (google.api.http) = {get: "/v1/integrations/github/repos"};
   }
+
+  // === GitLab-specific helpers (user-callable) ===
+
+  // Resolves the caller's GitLab integration and returns the repo catalog.
+  // If level is set, uses that integration exactly; otherwise defaults to
+  // MEMBER-first with WORKSPACE fallback. The raw token is never returned.
+  rpc GetGitlabRepos(GitlabReposRequest) returns (GitlabReposResponse) {
+    option (google.api.http) = {get: "/v1/integrations/gitlab/repos"};
+  }
 }
 
 // ============================================================================
@@ -345,6 +374,28 @@ message GithubReposRequest {
 message GithubReposResponse {
   message Repo {
     // "owner/repo" — display name from GitHub API.
+    string name           = 1;
+    string clone_url      = 2;
+    string default_branch = 3;
+    bool   private        = 4;
+  }
+  repeated Repo repos = 1;
+}
+
+// ============================================================================
+// Request / Response — GitLab helpers
+// ============================================================================
+
+message GitlabReposRequest {
+  // Required.
+  string workspace_id = 1;
+  // Optional. When unset, defaults to MEMBER-first with WORKSPACE fallback.
+  Integration.Level level = 2;
+}
+
+message GitlabReposResponse {
+  message Repo {
+    // "group/project" — path_with_namespace from GitLab API.
     string name           = 1;
     string clone_url      = 2;
     string default_branch = 3;

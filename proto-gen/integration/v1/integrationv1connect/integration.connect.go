@@ -60,6 +60,9 @@ const (
 	// IntegrationServiceGetGithubReposProcedure is the fully-qualified name of the IntegrationService's
 	// GetGithubRepos RPC.
 	IntegrationServiceGetGithubReposProcedure = "/integration.v1.IntegrationService/GetGithubRepos"
+	// IntegrationServiceGetGitlabReposProcedure is the fully-qualified name of the IntegrationService's
+	// GetGitlabRepos RPC.
+	IntegrationServiceGetGitlabReposProcedure = "/integration.v1.IntegrationService/GetGitlabRepos"
 )
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
@@ -73,6 +76,7 @@ var (
 	integrationServiceDeleteIntegrationMethodDescriptor = integrationServiceServiceDescriptor.Methods().ByName("DeleteIntegration")
 	integrationServiceAccessIntegrationMethodDescriptor = integrationServiceServiceDescriptor.Methods().ByName("AccessIntegration")
 	integrationServiceGetGithubReposMethodDescriptor    = integrationServiceServiceDescriptor.Methods().ByName("GetGithubRepos")
+	integrationServiceGetGitlabReposMethodDescriptor    = integrationServiceServiceDescriptor.Methods().ByName("GetGitlabRepos")
 )
 
 // IntegrationServiceClient is a client for the integration.v1.IntegrationService service.
@@ -101,6 +105,10 @@ type IntegrationServiceClient interface {
 	// If level is set, uses that integration exactly; otherwise defaults to
 	// MEMBER-first with WORKSPACE fallback. The raw token is never returned.
 	GetGithubRepos(context.Context, *connect.Request[v1.GithubReposRequest]) (*connect.Response[v1.GithubReposResponse], error)
+	// Resolves the caller's GitLab integration and returns the repo catalog.
+	// If level is set, uses that integration exactly; otherwise defaults to
+	// MEMBER-first with WORKSPACE fallback. The raw token is never returned.
+	GetGitlabRepos(context.Context, *connect.Request[v1.GitlabReposRequest]) (*connect.Response[v1.GitlabReposResponse], error)
 }
 
 // NewIntegrationServiceClient constructs a client for the integration.v1.IntegrationService
@@ -161,6 +169,12 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(integrationServiceGetGithubReposMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
+		getGitlabRepos: connect.NewClient[v1.GitlabReposRequest, v1.GitlabReposResponse](
+			httpClient,
+			baseURL+IntegrationServiceGetGitlabReposProcedure,
+			connect.WithSchema(integrationServiceGetGitlabReposMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -174,6 +188,7 @@ type integrationServiceClient struct {
 	deleteIntegration *connect.Client[v11.Id, v11.Empty]
 	accessIntegration *connect.Client[v1.AccessIntegrationRequest, v1.AccessIntegrationResponse]
 	getGithubRepos    *connect.Client[v1.GithubReposRequest, v1.GithubReposResponse]
+	getGitlabRepos    *connect.Client[v1.GitlabReposRequest, v1.GitlabReposResponse]
 }
 
 // GetProviders calls integration.v1.IntegrationService.GetProviders.
@@ -216,6 +231,11 @@ func (c *integrationServiceClient) GetGithubRepos(ctx context.Context, req *conn
 	return c.getGithubRepos.CallUnary(ctx, req)
 }
 
+// GetGitlabRepos calls integration.v1.IntegrationService.GetGitlabRepos.
+func (c *integrationServiceClient) GetGitlabRepos(ctx context.Context, req *connect.Request[v1.GitlabReposRequest]) (*connect.Response[v1.GitlabReposResponse], error) {
+	return c.getGitlabRepos.CallUnary(ctx, req)
+}
+
 // IntegrationServiceHandler is an implementation of the integration.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
 	GetProviders(context.Context, *connect.Request[v1.ProvidersRequest]) (*connect.Response[v1.ProvidersResponse], error)
@@ -242,6 +262,10 @@ type IntegrationServiceHandler interface {
 	// If level is set, uses that integration exactly; otherwise defaults to
 	// MEMBER-first with WORKSPACE fallback. The raw token is never returned.
 	GetGithubRepos(context.Context, *connect.Request[v1.GithubReposRequest]) (*connect.Response[v1.GithubReposResponse], error)
+	// Resolves the caller's GitLab integration and returns the repo catalog.
+	// If level is set, uses that integration exactly; otherwise defaults to
+	// MEMBER-first with WORKSPACE fallback. The raw token is never returned.
+	GetGitlabRepos(context.Context, *connect.Request[v1.GitlabReposRequest]) (*connect.Response[v1.GitlabReposResponse], error)
 }
 
 // NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -298,6 +322,12 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 		connect.WithSchema(integrationServiceGetGithubReposMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
+	integrationServiceGetGitlabReposHandler := connect.NewUnaryHandler(
+		IntegrationServiceGetGitlabReposProcedure,
+		svc.GetGitlabRepos,
+		connect.WithSchema(integrationServiceGetGitlabReposMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/integration.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IntegrationServiceGetProvidersProcedure:
@@ -316,6 +346,8 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 			integrationServiceAccessIntegrationHandler.ServeHTTP(w, r)
 		case IntegrationServiceGetGithubReposProcedure:
 			integrationServiceGetGithubReposHandler.ServeHTTP(w, r)
+		case IntegrationServiceGetGitlabReposProcedure:
+			integrationServiceGetGitlabReposHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -355,4 +387,8 @@ func (UnimplementedIntegrationServiceHandler) AccessIntegration(context.Context,
 
 func (UnimplementedIntegrationServiceHandler) GetGithubRepos(context.Context, *connect.Request[v1.GithubReposRequest]) (*connect.Response[v1.GithubReposResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("integration.v1.IntegrationService.GetGithubRepos is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) GetGitlabRepos(context.Context, *connect.Request[v1.GitlabReposRequest]) (*connect.Response[v1.GitlabReposResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("integration.v1.IntegrationService.GetGitlabRepos is not implemented"))
 }
