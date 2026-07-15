@@ -166,7 +166,6 @@ Environment:
 				sbResp.Msg.WorkspaceId,
 				sbResp.Msg.Name,
 				baseDir,
-				jwt,
 				profile.Endpoint,
 				autoRespond,
 			)
