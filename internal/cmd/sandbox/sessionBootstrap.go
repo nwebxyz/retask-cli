@@ -59,7 +59,6 @@ type SessionBootstrap struct {
 	Config       *sandboxv1.Sandbox_Config
 	SystemPrompt string
 	SeedPrompt   string
-	JWT          string
 	Endpoint     string
 	BaseDir      string // directory where `retask sandbox connect` was invoked
 	Log          *slog.Logger
@@ -261,7 +260,10 @@ func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessi
 		}
 	}
 
-	env = b.buildSessionEnv()
+	env, err = b.buildSessionEnv()
+	if err != nil {
+		return "", nil, err
+	}
 
 	b.logInfo("session_bootstrap_complete", "session_id", b.SessionID)
 	writeTerm(ctx, conn, "\r\n[retask] Session ready.\r\n\r\n")
@@ -396,10 +398,9 @@ func (b *SessionBootstrap) logError(msg string, args ...any) {
 	}
 }
 
-func (b *SessionBootstrap) buildSessionEnv() []string {
+func (b *SessionBootstrap) buildSessionEnv() ([]string, error) {
 	injected := map[string]string{
 		"SESSION_ID":               b.SessionID,
-		"NWEB_API_TOKEN":           b.JWT,
 		"NWEB_WORKSPACE_ID":        b.WorkspaceID,
 		"NWEB_API_ENDPOINT":        b.Endpoint,
 		"NWEB_API_TRANSPORT":       "http",
@@ -408,5 +409,27 @@ func (b *SessionBootstrap) buildSessionEnv() []string {
 		"CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
 		"SEED_PROMPT":              b.SeedPrompt,
 	}
-	return buildEnv(os.Environ(), b.Config, injected)
+	// NWEB_API_TOKEN is deliberately NOT injected here. The backend mints a
+	// per-session token scoped to the session's creator (the user who created
+	// the session, with a long TTL) and delivers it inside Config.EnvVars.
+	// Injecting the connect operator's own JWT would override it, so every
+	// user's session on a shared Private VM would run under the operator's
+	// short-lived identity. Let the Config value flow through the config layer.
+	env := buildEnv(os.Environ(), b.Config, injected)
+	if envValue(env, "NWEB_API_TOKEN") == "" {
+		return nil, errors.New("NWEB_API_TOKEN missing from sandbox config: backend did not provision a per-session token")
+	}
+	return env, nil
+}
+
+// envValue returns the value for key in a KEY=VALUE environment slice, or ""
+// if the key is absent. buildEnv produces at most one entry per key.
+func envValue(env []string, key string) string {
+	prefix := key + "="
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, prefix); ok {
+			return v
+		}
+	}
+	return ""
 }

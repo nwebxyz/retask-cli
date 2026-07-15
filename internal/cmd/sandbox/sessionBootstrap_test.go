@@ -223,6 +223,40 @@ func TestBuildEnv_SkipsEmptyKey(t *testing.T) {
 	}
 }
 
+// --- buildSessionEnv ---
+
+// The backend mints a per-session NWEB_API_TOKEN scoped to the session's
+// creator (long TTL) and delivers it inside Config.EnvVars. buildSessionEnv
+// must let that value flow through untouched — it must NOT override it with
+// the connect operator's own JWT, or every user's session on a shared Private
+// VM would run under the operator's short-lived identity.
+func TestBuildSessionEnv_UsesBackendConfigToken(t *testing.T) {
+	b := &SessionBootstrap{
+		SessionID:   "sess-1",
+		WorkspaceID: "ws-1",
+		Endpoint:    "https://api.example",
+		Config: &sandboxv1.Sandbox_Config{
+			EnvVars: []*sandboxv1.Sandbox_Config_EnvVar{
+				{Key: "NWEB_API_TOKEN", Plain: "userB-session-token"},
+			},
+		},
+	}
+	env, err := b.buildSessionEnv()
+	assert.NoError(t, err)
+	m := envToMap(env)
+	assert.Equal(t, "userB-session-token", m["NWEB_API_TOKEN"],
+		"session must use the backend-provided per-session token, not an injected operator token")
+}
+
+// If the backend did not provision NWEB_API_TOKEN in the config, the session
+// must fail loudly rather than start with no (or the wrong) API identity —
+// mirroring the Cloud path, which treats an absent NWEB_API_TOKEN as an error.
+func TestBuildSessionEnv_ErrorsWhenConfigMissingToken(t *testing.T) {
+	b := &SessionBootstrap{Config: &sandboxv1.Sandbox_Config{}}
+	_, err := b.buildSessionEnv()
+	assert.Error(t, err, "must fail when the backend did not provision NWEB_API_TOKEN")
+}
+
 // --- parseChoiceFrom ---
 
 func TestParseChoiceFrom(t *testing.T) {

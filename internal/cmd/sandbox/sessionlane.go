@@ -28,7 +28,6 @@ type SessionManager struct {
 	workspaceID string
 	sandboxName string
 	baseDir     string
-	jwt         string
 	endpoint    string
 	autoRespond bool // auto-accept known agent prompts (e.g. folder-trust)
 
@@ -42,7 +41,7 @@ func newSessionManager(
 	fleetCfg agentfleet.FleetConfig,
 	agentCfg agentfleet.AgentConfig,
 	log *slog.Logger,
-	workspaceID, sandboxName, baseDir, jwt, endpoint string,
+	workspaceID, sandboxName, baseDir, endpoint string,
 	autoRespond bool,
 ) *SessionManager {
 	return &SessionManager{
@@ -55,7 +54,6 @@ func newSessionManager(
 		workspaceID: workspaceID,
 		sandboxName: sandboxName,
 		baseDir:     baseDir,
-		jwt:         jwt,
 		endpoint:    endpoint,
 		autoRespond: autoRespond,
 		sessions:    make(map[string]*agentfleet.Runner),
@@ -98,7 +96,6 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		Config:       &cfg,
 		SystemPrompt: systemPrompt,
 		SeedPrompt:   seedPrompt,
-		JWT:          sm.jwt,
 		Endpoint:     sm.endpoint,
 		BaseDir:      sm.baseDir,
 		Log:          sm.log,
