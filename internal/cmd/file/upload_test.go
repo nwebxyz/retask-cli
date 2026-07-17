@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/flags"
+	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 )
 
 func TestPartMimeType(t *testing.T) {
@@ -237,5 +239,55 @@ func TestUploadFileRejectsOversizeBeforeRequest(t *testing.T) {
 	}
 	if called {
 		t.Error("must fail before making a request")
+	}
+}
+
+func TestTaskNrnString(t *testing.T) {
+	got := taskNrnString("task_abc123")
+	want := "nweb:retask-task:task:task_abc123"
+	if got != want {
+		t.Errorf("taskNrnString() = %q, want %q", got, want)
+	}
+}
+
+func TestNrnString(t *testing.T) {
+	got := nrnString(&commonv1.Nrn{
+		Domain: "nweb", Service: "retask-task", ResourceType: "task", ResourceId: "t1",
+	})
+	if got != "nweb:retask-task:task:t1" {
+		t.Errorf("nrnString() = %q", got)
+	}
+	if s := nrnString(nil); s != "" {
+		t.Errorf("nrnString(nil) = %q, want empty", s)
+	}
+}
+
+func TestUploadCommandRejectsTaskAndCommentTogether(t *testing.T) {
+	gf := &flags.Global{WorkspaceID: "ws_1"}
+	cmd := newUploadCommand(gf)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"/tmp/whatever.txt", "--task", "t1", "--comment", "c1"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error for mutually exclusive --task/--comment")
+	}
+}
+
+func TestUploadCommandRequiresPathArg(t *testing.T) {
+	gf := &flags.Global{WorkspaceID: "ws_1"}
+	cmd := newUploadCommand(gf)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error for missing path argument")
+	}
+}
+
+func TestUploadCommandRequiresWorkspaceForTask(t *testing.T) {
+	gf := &flags.Global{} // no workspace id
+	cmd := newUploadCommand(gf)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"/tmp/whatever.txt", "--task", "t1"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error for --task without a workspace id")
 	}
 }

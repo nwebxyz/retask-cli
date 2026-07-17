@@ -15,6 +15,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	connectrpc "connectrpc.com/connect"
+	"github.com/spf13/cobra"
+
+	"github.com/nwebxyz/retask-cli/internal/auth"
+	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/config"
+	"github.com/nwebxyz/retask-cli/internal/flags"
+	"github.com/nwebxyz/retask-cli/internal/output"
+	commentv1 "github.com/nwebxyz/retask-cli/proto-gen/comment/v1"
+	commentv1connect "github.com/nwebxyz/retask-cli/proto-gen/comment/v1/commentv1connect"
+	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
+	filev1connect "github.com/nwebxyz/retask-cli/proto-gen/file/v1/filev1connect"
+	taskv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/task/v1"
+	taskv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/task/v1/taskv1connect"
 )
 
 // maxUploadBytes mirrors the file service's UploadFileSizeLimitInMB (100 MB).
@@ -145,4 +160,153 @@ func uploadError(status int, body []byte) error {
 		return fmt.Errorf("upload failed (%d): %s", status, er.Error)
 	}
 	return fmt.Errorf("upload failed with status %d", status)
+}
+
+// uploadDeps carries what an upload needs: an authenticated HTTP client, the
+// REST endpoint for the bytes, and the gRPC base URL for the follow-up calls.
+type uploadDeps struct {
+	httpClient   *http.Client
+	restEndpoint string
+	baseURL      string
+	transport    string
+}
+
+// resolveUpload loads the profile, resolves the JWT, and returns the endpoints
+// an upload needs. It mirrors connect() but exposes the raw HTTP client and the
+// REST endpoint instead of a FileServiceClient.
+func resolveUpload(gf *flags.Global) (deps uploadDeps, err error) {
+	path := gf.ConfigPath
+	if path == "" {
+		path = config.DefaultConfigPath()
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return uploadDeps{}, err
+	}
+	profile := cfg.ActiveProfileData(gf.Profile)
+	resolver := auth.NewResolver(profile, gf.Profile, gf.WorkspaceID, path, gf.NoSave, gf.Insecure)
+	jwt, err := resolver.Token(context.Background())
+	if err != nil {
+		return uploadDeps{}, err
+	}
+	return uploadDeps{
+		httpClient: client.New(jwt, gf.Insecure, gf.Verbose),
+		// Used verbatim: it is already a full URL, unlike Endpoint. Passing it
+		// through client.BaseURL would let --insecure rewrite https:// to http://.
+		restEndpoint: profile.RestAPIEndpoint,
+		baseURL:      client.BaseURL(profile.Endpoint, gf.Insecure),
+		transport:    gf.Transport,
+	}, nil
+}
+
+// taskNrnString builds a task's target NRN: nweb:retask-task:task:<id>.
+func taskNrnString(taskID string) (nrn string) {
+	return "nweb:retask-task:task:" + taskID
+}
+
+// nrnString renders an NRN in its canonical colon-separated string form.
+func nrnString(n *commonv1.Nrn) (s string) {
+	if n == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s:%s:%s:%s", n.GetDomain(), n.GetService(), n.GetResourceType(), n.GetResourceId())
+}
+
+func newUploadCommand(gf *flags.Global) *cobra.Command {
+	var taskID, commentID string
+	cmd := &cobra.Command{
+		Use:   "upload <path>",
+		Short: "Upload a file",
+		Long: `Upload a local file. With no flags the file is personal: it belongs to you and is
+attached to nothing. Pass --task or --comment to attach it in the same step.
+
+Usage examples:
+  retask file upload ./report.pdf
+  retask file upload ./report.pdf --task task_abc123
+  retask file upload ./screenshot.png --comment comment_abc123
+
+Flags:
+  --task string     Attach the file to this task
+  --comment string  Attach the file to this comment
+
+Output fields: file_id, workspace_id, type, target_nrn, file_name, mime_type, bytes, storage_path, preview_url, download_url, created_by_nrn, created_at`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := args[0]
+			ctx := context.Background()
+
+			// A workspace upload must carry a target; the server rejects the pair
+			// otherwise. Validate before resolving credentials so the error is fast
+			// and offline.
+			if (taskID != "" || commentID != "") && gf.WorkspaceID == "" {
+				return fmt.Errorf("--task and --comment require a workspace ID (--workspace-id or NWEB_WORKSPACE_ID)")
+			}
+
+			deps, err := resolveUpload(gf)
+			if err != nil {
+				return err
+			}
+
+			// Resolve the upload scope.
+			var workspaceID, targetNrn string
+			switch {
+			case taskID != "":
+				workspaceID, targetNrn = gf.WorkspaceID, taskNrnString(taskID)
+			case commentID != "":
+				// A comment NRN is not a legal file target, so the upload targets the
+				// comment's parent task. GetComment supplies both that NRN and the
+				// authoritative workspace.
+				cc := commentv1connect.NewCommentServiceClient(deps.httpClient, deps.baseURL, client.Options(deps.transport)...)
+				resp, gerr := cc.GetComment(ctx, connectrpc.NewRequest(&commonv1.Id{Id: commentID}))
+				if gerr != nil {
+					return gerr
+				}
+				targetNrn = nrnString(resp.Msg.GetTargetNrn())
+				if targetNrn == "" {
+					return fmt.Errorf("comment %s has no target task", commentID)
+				}
+				workspaceID = resp.Msg.GetWorkspaceId()
+			}
+			// Personal upload: both stay empty, which selects user-file scope.
+
+			fileID, err := uploadFile(ctx, deps.httpClient, deps.restEndpoint, path, workspaceID, targetNrn)
+			if err != nil {
+				return err
+			}
+
+			// Link. The bytes are already stored; a failure here leaves an orphan
+			// file, which the message points at so it can be cleaned up.
+			switch {
+			case taskID != "":
+				tc := taskv1connect.NewTaskServiceClient(deps.httpClient, deps.baseURL, client.Options(deps.transport)...)
+				if _, aerr := tc.AddTaskAttachments(ctx, connectrpc.NewRequest(&taskv1.AddTaskAttachmentsRequest{
+					TaskId:  taskID,
+					FileIds: []string{fileID},
+				})); aerr != nil {
+					return fmt.Errorf("uploaded file %s but failed to attach it to task %s: %w", fileID, taskID, aerr)
+				}
+			case commentID != "":
+				cc := commentv1connect.NewCommentServiceClient(deps.httpClient, deps.baseURL, client.Options(deps.transport)...)
+				if _, aerr := cc.AddCommentAttachments(ctx, connectrpc.NewRequest(&commentv1.AddCommentAttachmentsRequest{
+					CommentId: commentID,
+					FileIds:   []string{fileID},
+				})); aerr != nil {
+					return fmt.Errorf("uploaded file %s but failed to attach it to comment %s: %w", fileID, commentID, aerr)
+				}
+			}
+
+			// Read back so every mode prints the same shape, with server-computed
+			// mime_type, storage_path and URLs.
+			fc := filev1connect.NewFileServiceClient(deps.httpClient, deps.baseURL, client.Options(deps.transport)...)
+			resp, err := fc.GetFile(ctx, connectrpc.NewRequest(&commonv1.Id{Id: fileID}))
+			if err != nil {
+				return err
+			}
+			return output.Print(gf.Pretty, resp.Msg)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "Attach the file to this task")
+	cmd.Flags().StringVar(&commentID, "comment", "", "Attach the file to this comment")
+	cmd.MarkFlagsMutuallyExclusive("task", "comment")
+	return cmd
 }
