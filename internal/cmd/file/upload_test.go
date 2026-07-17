@@ -282,6 +282,21 @@ func TestUploadCommandRequiresPathArg(t *testing.T) {
 	}
 }
 
+// An empty --task/--comment must not quietly become a personal upload: that is
+// what an unset shell variable looks like, and the file would land in the wrong
+// scope with no warning.
+func TestUploadCommandRejectsEmptyFlagValues(t *testing.T) {
+	for _, flag := range []string{"--task", "--comment"} {
+		gf := &flags.Global{WorkspaceID: "ws_1"}
+		cmd := newUploadCommand(gf)
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs([]string{"/tmp/whatever.txt", flag, ""})
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("expected error for empty %s, got nil", flag)
+		}
+	}
+}
+
 func TestUploadCommandRequiresWorkspaceForTask(t *testing.T) {
 	gf := &flags.Global{} // no workspace id
 	cmd := newUploadCommand(gf)

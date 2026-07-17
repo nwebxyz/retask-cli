@@ -235,6 +235,16 @@ Output fields: file_id, workspace_id, type, target_nrn, file_name, mime_type, by
 			path := args[0]
 			ctx := context.Background()
 
+			// An explicitly empty --task/--comment would otherwise fall through to a
+			// personal upload, silently uploading somewhere the caller did not mean.
+			// Catches the common scripting slip of passing an unset variable.
+			if cmd.Flags().Changed("task") && taskID == "" {
+				return fmt.Errorf("--task requires a task ID")
+			}
+			if cmd.Flags().Changed("comment") && commentID == "" {
+				return fmt.Errorf("--comment requires a comment ID")
+			}
+
 			// A workspace upload must carry a target; the server rejects the pair
 			// otherwise. Validate before resolving credentials so the error is fast
 			// and offline.
