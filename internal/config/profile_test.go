@@ -68,6 +68,38 @@ func TestActiveProfileDataEnvEndpointOverridesProfile(t *testing.T) {
 	assert.Equal(t, "override.host:1234", p.Endpoint)
 }
 
+func TestRestAPIEndpointDefault(t *testing.T) {
+	cfg, err := config.Load("/tmp/retask-test-nonexistent-abc123.yaml")
+	require.NoError(t, err)
+	p := cfg.ActiveProfileData("")
+	assert.Equal(t, "https://rest-api.nweb.app", p.RestAPIEndpoint)
+}
+
+func TestRestAPIEndpointFromProfile(t *testing.T) {
+	cfg := &config.Config{
+		ActiveProfile: "default",
+		Profiles: map[string]config.Profile{
+			"default": {Endpoint: "api.nweb.app:443", RestAPIEndpoint: "https://rest-api.dev.nweb.app"},
+		},
+	}
+	p := cfg.ActiveProfileData("")
+	assert.Equal(t, "https://rest-api.dev.nweb.app", p.RestAPIEndpoint)
+}
+
+func TestRestAPIEndpointEnvOverride(t *testing.T) {
+	t.Setenv("NWEB_REST_API_ENDPOINT", "http://localhost:8080")
+	cfg, err := config.Load("/tmp/retask-test-nonexistent-abc123.yaml")
+	require.NoError(t, err)
+	p := cfg.ActiveProfileData("")
+	assert.Equal(t, "http://localhost:8080", p.RestAPIEndpoint)
+}
+
+func TestRestAPIEndpointUnknownProfileFallsBackToDefault(t *testing.T) {
+	cfg := &config.Config{ActiveProfile: "default", Profiles: map[string]config.Profile{}}
+	p := cfg.ActiveProfileData("nope")
+	assert.Equal(t, "https://rest-api.nweb.app", p.RestAPIEndpoint)
+}
+
 func TestFilePermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := &config.Config{ActiveProfile: "default", Profiles: map[string]config.Profile{}}
