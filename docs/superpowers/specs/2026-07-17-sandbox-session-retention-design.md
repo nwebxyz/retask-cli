@@ -5,12 +5,20 @@ Status: Approved
 
 ## Summary
 
-Session working folders currently live and die with the session record. This
-change makes them durable artifacts governed by an age-based retention policy:
-`retask sandbox connect` records every session's start time to a per-sandbox log
-file, stops deleting folders on delete, and sweeps folders older than a
-configurable window. A new `retask sandbox cleanup` command exposes the same
-sweep for manual use.
+Session working folders survive being stopped. `retask sandbox connect` records
+every session's start time to a per-sandbox log file and sweeps folders older
+than a configurable window; a new `retask sandbox cleanup` command exposes the
+same sweep for manual use.
+
+Deletion has two triggers, and they are deliberately distinct from stopping:
+
+- **Explicit delete** (`delete_session`, `delete_sandbox`) reclaims disk
+  immediately. `delete_sandbox` is a full teardown: it stops sessions, deletes
+  their folders and the log file, then exits the CLI.
+- **Age** reclaims folders left behind by stop and disconnect.
+
+Stopping a session, stopping a sandbox, and stopping the CLI itself never delete
+anything.
 
 Separately, the session panel's elapsed timer gains an hours component.
 
@@ -19,7 +27,8 @@ Separately, the session panel's elapsed timer gains an hours component.
 Three deliverables:
 
 1. Elapsed time renders `h:mm:ss` past one hour — **in `agentfleet`, not this repo**.
-2. Session folder retention — session log, no delete-on-remove, hourly sweeper,
+2. Session folder lifecycle — session log, explicit-delete teardown for
+   `delete_session` / `delete_sandbox`, hourly retention sweeper, and a
    `sandbox cleanup` command.
 3. `help-llm` manifest updated for the new command and flags.
 
@@ -167,14 +176,112 @@ filesystem mtime) was considered and explicitly rejected.
 
 ### 2.5 Deletion policy
 
-`SessionManager.Remove` drops its `os.RemoveAll` call. It continues to stop the
-PTY and drop the fleet card, so `delete_session` still makes the session
-disappear from the UI immediately. The folder survives until it ages out or
-`sandbox cleanup` reaps it.
+Deleting is explicit and immediate; stopping never deletes. The two must not be
+conflated — the whole point of the split is that a user can stop work and come
+back to their files.
 
-Age becomes the single deletion policy across every path.
+| Trigger | Session PTYs | Folders | `<sandbox_id>.json` | CLI |
+|---|---|---|---|---|
+| User stops CLI (Ctrl-C / `kill`) | SIGTERM | keep | keep | exits |
+| `stop_session` | SIGTERM | keep | keep | runs on |
+| `stop_sandbox` | SIGTERM (all) | keep | keep | runs on |
+| Retention sweep / `cleanup` | untouched (live skipped) | delete aged | drop entries | runs on |
+| `delete_session` | SIGTERM | delete one | drop that entry | runs on |
+| `delete_sandbox` | SIGTERM (all) | delete all | delete file | **exits** |
 
-### 2.6 Retention sweeper
+This is enforced structurally: `Stop` and `StopAll` stay pure "signal the
+process" operations containing no disk access, and deletion lives only in the
+`delete_session` / `delete_sandbox` branches of the data lane. The CLI-stop path
+(`connect.go:193`) calls `StopAll` and returns, so it cannot acquire deletion
+behaviour by accident.
+
+**The drain wait.** `PtyAgent.Stop` sends SIGTERM and returns immediately —
+it does not wait for the process to exit:
+
+```go
+if err := a.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+    return a.cmd.Process.Kill()   // only if delivery failed, i.e. already gone
+}
+return nil
+```
+
+So today's `Remove` already races: it deletes the session folder while the agent
+is still handling SIGTERM and may be flushing files into it. SIGTERM's entire
+purpose is to grant that grace period, so deleting the directory mid-cleanup
+defeats it. Every delete path therefore stops the PTY, waits on `Runner.Done()`
+(closed at `runner.go:159` on process exit) up to a bounded timeout, and only
+then deletes:
+
+```go
+r.Stop()                                  // SIGTERM
+select {
+case <-r.Done():                          // clean exit
+case <-time.After(sessionDrainTimeout):   // hung; reap anyway
+}
+os.RemoveAll(dir)
+```
+
+A hung process still gets its folder reclaimed after the timeout, so a stuck
+agent cannot block teardown indefinitely. Note that agentfleet never escalates
+to `SIGKILL` for a process that *ignores* SIGTERM (the `Kill()` above fires only
+when delivery fails), so the timeout is the only backstop. `delete_sandbox`
+drains sessions concurrently, bounding total teardown at one timeout rather than
+one per session.
+
+`sessionDrainTimeout` is 5 seconds.
+
+### 2.6 `delete_sandbox` teardown
+
+`delete_sandbox` tears the whole thing down and exits the CLI — leaving a TUI
+attached to a sandbox that no longer exists is not a useful state.
+
+Sequence, in `SessionManager`:
+
+1. `StopAll` — SIGTERM every live session.
+2. Drain — wait on each `Runner.Done()` concurrently, bounded by
+   `sessionDrainTimeout`.
+3. Delete every session folder listed in the log.
+4. Delete `<sandbox_id>.json`.
+5. Close the log store (§2.6.1).
+6. Return `errSandboxDeleted`, which unwinds `DataLane.Run`.
+
+Then the CLI exits. `dl.Run(ctx)` is launched as a goroutine
+(`connect.go:174`), so its return currently signals nothing — `ctx` is never
+cancelled and the TUI keeps running. The fix is to cancel on return:
+
+```go
+go func() {
+    dl.Run(ctx)
+    stop()   // cancel ctx: unblocks tui.Run / <-ctx.Done(), then StopAll
+}()
+```
+
+`stop()` is the existing `signal.NotifyContext` cancel from `connect.go:94`, so
+this reuses the exact path a Ctrl-C already takes — `tui.Run` returns, the
+deferred `stop()` is a no-op (cancel is idempotent), and `sm.StopAll()` at
+`connect.go:193` runs against an already-empty session map. Calling `stop()`
+when `Run` returns for any other reason (ctx already cancelled) is equally
+harmless.
+
+#### 2.6.1 Closing the log store
+
+Deleting `<sandbox_id>.json` while the retention sweeper is still alive is a
+resurrection hazard: a sweep tick between step 4 and the TUI actually exiting
+would rewrite the file we just deleted, leaving a log for a sandbox that no
+longer exists.
+
+Cancelling `ctx` first would stop the sweeper but kill the TUI before teardown
+finishes, so ordering alone cannot fix it. Instead the store gets an explicit
+`Close()` that latches a `closed` flag under the same mutex that guards writes;
+every subsequent mutation becomes a no-op. Teardown is then correct regardless
+of how the sweeper and the exit path interleave.
+
+### 2.7 Retention sweeper
+
+Retention is the backstop for folders left behind by stop and disconnect —
+the paths that deliberately do not delete. Explicit deletes reclaim their own
+disk immediately (§2.5), so the sweeper exists for the folders nobody ever
+explicitly deleted.
 
 `retask sandbox connect` gains `--retention` (default `30d`; `off` disables).
 When enabled, a goroutine sweeps once at startup and then hourly until the
@@ -254,9 +361,17 @@ the repo's help-text template.
 | `sessionlog_test.go` | `parseRetention`: `30d`, `12h`, `off`, invalid input |
 | `sessionlog_test.go` | sweep: reaps older-than-window, keeps newer, removes entry + folder together, skips live sessions |
 | `cleanup_test.go` | multi-log cwd; foreign JSON skipped; `--dry-run` deletes nothing; `--older-than 0` takes all; single-sandbox arg narrows scope |
+| `sessionlane_test.go` | `delete_session` deletes folder + drops entry; `delete_sandbox` deletes all folders + the log file; drain waits for `Done()` before deleting; drain gives up after the timeout on a process that ignores SIGTERM |
+| `sessionlane_test.go` | **stop does not delete**: `Stop`, `StopAll`, and the CLI-stop path leave folders and log intact |
+| `sessionlog_test.go` | `Close()` latches: a sweep after teardown cannot recreate the deleted log file |
 | `main_test.go` | existing manifest sync test covers the new command and flags |
 
-Sweep tests inject a clock and base directory rather than sleeping.
+Sweep tests inject a clock and base directory rather than sleeping. Drain tests
+use a fake runner exposing a controllable `Done()` channel, so the SIGTERM-race
+and timeout cases are deterministic rather than timing-dependent.
+
+The "stop does not delete" cases are the regression guard for the distinction in
+§2.5 — they fail loudly if deletion ever leaks into a stop path.
 
 ## Decisions rejected
 
@@ -264,7 +379,10 @@ Sweep tests inject a clock and base directory rather than sleeping.
   larger API change than the format warrants.
 - **Adopting orphan folders via mtime** — would have reaped the pre-existing
   backlog; rejected in favour of a strict log-only policy.
-- **Keeping `os.RemoveAll` on `delete_session`** — would leave "delete" meaning
-  two different things depending on the path.
+- **Deferring `delete_session` folder removal to the sweeper** — briefly adopted,
+  then reversed: an explicit delete should reclaim its disk immediately rather
+  than leave the folder sitting for up to the retention window.
+- **Deleting folders without draining the PTY** — matches today's behaviour, but
+  destroys the working directory while the agent is still handling SIGTERM.
 - **`--after-days 30` (numeric)** — closer to the original phrasing, but splits
   the duration vocabulary and cannot express sub-day windows.
