@@ -119,6 +119,7 @@ func buildManifest() manifest {
 			{Command: "retask project member list", Description: "List project members", Example: "retask project member list <project-id>"},
 			{Command: "retask project member add", Description: "Add a workspace member to a project", Flags: []string{"--member-id", "--role"}, Example: "retask project member add <proj-id> --member-id <mem-id> --role MEMBER_ROLE_EDITOR"},
 			{Command: "retask project member remove", Description: "Remove a member from a project", Example: "retask project member remove <proj-id> <member-id>"},
+			{Command: "retask file upload", Description: "Upload a file — personal by default, or attached to a task or comment", Flags: []string{"--task", "--comment"}, Example: "retask file upload ./report.pdf --task <task-id>"},
 			{Command: "retask file list", Description: "List files in the workspace, optionally filtered by attached resource or author", Flags: []string{"--target", "--created-by"}, Example: "retask file list --target nweb:retask-task:task:<task-id>"},
 			{Command: "retask file get", Description: "Get a file by ID", Example: "retask file get <file-id>"},
 			{Command: "retask file delete", Description: "Delete a file", Example: "retask file delete <file-id>"},
