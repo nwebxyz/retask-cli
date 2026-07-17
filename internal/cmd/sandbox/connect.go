@@ -50,6 +50,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
 	var autoOpen bool
 	var noAutoRespond bool
+	var retention string
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
 		Short: "Connect this machine as a Private VM sandbox",
@@ -58,15 +59,22 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 This is a long-running command that maintains a persistent WebSocket connection
 to sandbox-proxy and manages sessions as local PTY processes.
 
+Session folders are created in the current directory and recorded in
+<sandbox-id>.json. Stopping a session, the sandbox, or this command leaves them
+on disk; --retention deletes the ones older than its window, checked hourly.
+
 Usage example:
   retask sandbox connect sandbox_abc123
   retask sandbox connect sandbox_abc123 --mode headless
   retask sandbox connect sandbox_abc123 --auto-open
+  retask sandbox connect sandbox_abc123 --retention 7d
+  retask sandbox connect sandbox_abc123 --retention off
 
 Flags:
   --mode string      Running mode: auto, tui, headless (default: auto)
   --auto-open        Auto-open a terminal tab for each new session (default: false)
   --no-auto-respond  Disable auto-accepting known agent startup prompts (default: false)
+  --retention string Delete session folders older than this, checked hourly. Values: 30d, 12h, off (default: 30d)
 
 Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
@@ -76,6 +84,10 @@ Environment:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
 				return fmt.Errorf("invalid --mode %q: must be auto, tui, or headless", mode)
+			}
+			retentionWindow, retentionOn, err := parseRetention(retention)
+			if err != nil {
+				return err
 			}
 			sandboxID := args[0]
 
@@ -158,6 +170,7 @@ Environment:
 			if err != nil {
 				return err
 			}
+			sessLog := newSessionLog(baseDir, sandboxID)
 			autoRespond := !(noAutoRespond || os.Getenv("RETASK_SANDBOX_NO_AUTO_RESPOND") == "1")
 			sm := newSessionManager(
 				sandboxID, wsBase,
@@ -167,11 +180,32 @@ Environment:
 				sbResp.Msg.Name,
 				baseDir,
 				profile.Endpoint,
+				sessLog,
 				autoRespond,
 			)
+
+			if retentionOn {
+				sweeper := &retentionSweeper{
+					log:      sessLog,
+					baseDir:  baseDir,
+					window:   retentionWindow,
+					interval: retentionSweepInterval,
+					isActive: sm.isActive,
+					logger:   logger,
+				}
+				go sweeper.Run(ctx)
+			}
+
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
-			go dl.Run(ctx)
+			// A deleted sandbox ends the data lane for good; there is nothing
+			// left to attach to, so unwind the CLI down the same path a Ctrl-C
+			// takes. stop() is idempotent, so returning for any other reason
+			// (ctx already cancelled) is harmless.
+			go func() {
+				dl.Run(ctx)
+				stop()
+			}()
 
 			if useTUI {
 				execPath, _ := os.Executable()
@@ -197,6 +231,7 @@ Environment:
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Running mode: auto, tui, headless")
 	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
+	cmd.Flags().StringVar(&retention, "retention", "30d", `Delete session folders older than this (e.g. 30d, 12h); "off" disables`)
 	return cmd
 }
 
