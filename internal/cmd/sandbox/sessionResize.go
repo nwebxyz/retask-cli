@@ -8,9 +8,21 @@ import (
 
 // maxPTYDimension is the upper bound (inclusive) on a valid PTY dimension.
 // TIOCSWINSZ's fields are uint16, and a latched size is replayed to every
-// future VM attach, so an absurd value must be treated as invalid — never
-// clamped — the same as an absent one.
+// future VM attach, so a value above the bound is clamped down to it rather
+// than applied unbounded — a huge number plausibly means a real large
+// terminal. A value at or below zero is still treated as invalid, the same
+// as an absent one: it is nonsense, not a size to round up.
 const maxPTYDimension = 1000
+
+// clampDimension caps a PTY dimension at maxPTYDimension. It must only be
+// called with values already known to be positive (> 0); non-positive
+// values are rejected earlier, not clamped.
+func clampDimension(v int) int {
+	if v > maxPTYDimension {
+		return maxPTYDimension
+	}
+	return v
+}
 
 // pendingSize holds a window size that arrived before the PTY could accept it.
 //
@@ -78,11 +90,11 @@ func recordResizeFrame(raw []byte, p *pendingSize) bool {
 	if json.Unmarshal(raw, &msg) != nil || msg.Type != "resize" {
 		return false
 	}
-	if msg.Rows <= 0 || msg.Cols <= 0 || msg.Rows > maxPTYDimension || msg.Cols > maxPTYDimension {
+	if msg.Rows <= 0 || msg.Cols <= 0 {
 		return false
 	}
 	if p != nil {
-		p.store(msg.Rows, msg.Cols)
+		p.store(clampDimension(msg.Rows), clampDimension(msg.Cols))
 	}
 	return true
 }

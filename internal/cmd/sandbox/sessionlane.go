@@ -215,8 +215,10 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			r.StdinWriter().Write(b) //nolint:errcheck
 		case "resize":
 			sm.logInfo("session_resize", "session_id", sessionID, "rows", msg.Rows, "cols", msg.Cols)
-			if msg.Rows > 0 && msg.Cols > 0 && msg.Rows <= maxPTYDimension && msg.Cols <= maxPTYDimension {
-				if err := applyResize(r, msg.Rows, msg.Cols, 5, 50*time.Millisecond); err != nil {
+			// Values <= 0 are ignored; values above maxPTYDimension are
+			// clamped down to it rather than ignored (see clampDimension).
+			if msg.Rows > 0 && msg.Cols > 0 {
+				if err := applyResize(r, clampDimension(msg.Rows), clampDimension(msg.Cols), 5, 50*time.Millisecond); err != nil {
 					sm.logError("session_resize_failed", "session_id", sessionID, "error", err)
 				}
 			}

@@ -135,7 +135,7 @@ func TestRecordResizeFrameIgnoresNonPositive(t *testing.T) {
 	}
 }
 
-func TestRecordResizeFrameIgnoresOutOfRange(t *testing.T) {
+func TestRecordResizeFrameIgnoresNonPositiveVariants(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
@@ -143,8 +143,6 @@ func TestRecordResizeFrameIgnoresOutOfRange(t *testing.T) {
 		{"zero rows", `{"type":"resize","cols":120,"rows":0}`},
 		{"negative cols", `{"type":"resize","cols":-1,"rows":30}`},
 		{"negative rows", `{"type":"resize","cols":120,"rows":-1}`},
-		{"cols above max", `{"type":"resize","cols":1001,"rows":30}`},
-		{"rows above max", `{"type":"resize","cols":120,"rows":1001}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -167,6 +165,34 @@ func TestRecordResizeFrameAcceptsMaxBoundary(t *testing.T) {
 	rows, cols, ok := p.take()
 	if !ok || rows != 1000 || cols != 1000 {
 		t.Fatalf("got rows=%d cols=%d ok=%v, want 1000/1000/true", rows, cols, ok)
+	}
+}
+
+// A value above maxPTYDimension plausibly means a real large terminal, so it
+// is clamped down rather than rejected — unlike a non-positive value, which
+// is nonsense and stays rejected.
+func TestRecordResizeFrameClampsAboveMax(t *testing.T) {
+	cases := []struct {
+		name     string
+		raw      string
+		wantRows int
+		wantCols int
+	}{
+		{"cols above max", `{"type":"resize","cols":1001,"rows":30}`, 30, 1000},
+		{"rows above max", `{"type":"resize","cols":120,"rows":1001}`, 1000, 120},
+		{"far above max", `{"type":"resize","cols":999999999,"rows":30}`, 30, 1000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var p pendingSize
+			if !recordResizeFrame([]byte(tc.raw), &p) {
+				t.Fatalf("expected %s to be accepted (clamped), not rejected", tc.name)
+			}
+			rows, cols, ok := p.take()
+			if !ok || rows != tc.wantRows || cols != tc.wantCols {
+				t.Fatalf("got rows=%d cols=%d ok=%v, want %d/%d/true", rows, cols, ok, tc.wantRows, tc.wantCols)
+			}
+		})
 	}
 }
 
