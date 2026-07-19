@@ -62,6 +62,10 @@ type SessionBootstrap struct {
 	Endpoint     string
 	BaseDir      string // directory where `retask sandbox connect` was invoked
 	Log          *slog.Logger
+
+	// Pending receives window sizes that arrive during bootstrap, before the
+	// PTY exists. Applied by the caller once the PTY is up.
+	Pending *pendingSize
 }
 
 // deriveTargetDir returns the default clone directory name for a repo URL —
@@ -192,11 +196,18 @@ func writeTerm(ctx context.Context, conn *websocket.Conn, text string) {
 // readChoice reads keyboard input from the session lane and returns the user's
 // choice (1/2/3). Keystrokes are echoed back to the terminal. Returns 2
 // (continue) on any read error so a disconnected client does not block forever.
-func readChoice(ctx context.Context, conn *websocket.Conn) int {
+// pending may be nil; when non-nil, resize frames arriving on this socket
+// during bootstrap are latched into it instead of being discarded.
+func readChoice(ctx context.Context, conn *websocket.Conn, pending *pendingSize) int {
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
 			return 2
+		}
+		// Resize frames share this socket and would otherwise be dropped
+		// while the failure menu is open.
+		if recordResizeFrame(raw, pending) {
+			continue
 		}
 		var msg struct {
 			Type string `json:"type"`
@@ -250,7 +261,7 @@ func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessi
 			}
 			writeTerm(ctx, conn, fmt.Sprintf("\r\n[retask] Git repo setup failed: %v\r\n", err))
 			writeTerm(ctx, conn, "\r\n  1) Retry\r\n  2) Continue (skip repos)\r\n  3) Exit\r\n\r\nSelection [2]: ")
-			choice := readChoice(ctx, conn)
+			choice := readChoice(ctx, conn, b.Pending)
 			if choice == 3 {
 				return "", nil, ErrAborted
 			}

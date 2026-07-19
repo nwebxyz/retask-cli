@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	agentfleet "github.com/hoaitan/agentfleet"
@@ -86,6 +87,14 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}
 	sm.logInfo("session_lane_connected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
 
+	// pending latches window sizes that arrive before the PTY exists: the
+	// initial geometry reported in the new_session frame, or a resize that
+	// races bootstrap. It is flushed once the PTY is up.
+	pending := &pendingSize{}
+	if cols > 0 && rows > 0 {
+		pending.store(rows, cols)
+	}
+
 	// Run bootstrap — writes files, clones repos, builds env.
 	sb := &SessionBootstrap{
 		SessionID:    sessionID,
@@ -99,6 +108,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		Endpoint:     sm.endpoint,
 		BaseDir:      sm.baseDir,
 		Log:          sm.log,
+		Pending:      pending,
 	}
 	sessionDir, env, err := sb.Run(ctx, wsConn)
 	if err != nil {
@@ -138,6 +148,17 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	sm.mu.Lock()
 	sm.sessions[sessionID] = r
 	sm.mu.Unlock()
+
+	// Apply any geometry that arrived before the PTY existed — from the
+	// new_session frame or from a resize during bootstrap. Runner.Start is
+	// non-blocking, so this retries until the PTY master fd is open.
+	if pRows, pCols, ok := pending.take(); ok {
+		if err := applyResize(r, pRows, pCols, 20, 50*time.Millisecond); err != nil {
+			sm.logError("session_initial_resize_failed", "session_id", sessionID, "error", err)
+		} else {
+			sm.logInfo("session_initial_resize", "session_id", sessionID, "rows", pRows, "cols", pCols)
+		}
+	}
 
 	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 	if sm.autoRespond {
@@ -188,7 +209,11 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			r.StdinWriter().Write(b) //nolint:errcheck
 		case "resize":
 			sm.logInfo("session_resize", "session_id", sessionID, "rows", msg.Rows, "cols", msg.Cols)
-			r.Resize(msg.Rows, msg.Cols) //nolint:errcheck
+			if msg.Rows > 0 && msg.Cols > 0 {
+				if err := applyResize(r, msg.Rows, msg.Cols, 5, 50*time.Millisecond); err != nil {
+					sm.logError("session_resize_failed", "session_id", sessionID, "error", err)
+				}
+			}
 		}
 	}
 }

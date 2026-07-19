@@ -100,3 +100,43 @@ func TestApplyResizeGivesUpAfterAttempts(t *testing.T) {
 		t.Fatalf("got calls=%d, want exactly 3", f.calls)
 	}
 }
+
+func TestRecordResizeFrameLatchesSize(t *testing.T) {
+	var p pendingSize
+	if !recordResizeFrame([]byte(`{"type":"resize","cols":120,"rows":30}`), &p) {
+		t.Fatal("expected a resize frame to be recognized")
+	}
+	rows, cols, ok := p.take()
+	if !ok || rows != 30 || cols != 120 {
+		t.Fatalf("got rows=%d cols=%d ok=%v, want 30/120/true", rows, cols, ok)
+	}
+}
+
+func TestRecordResizeFrameIgnoresOtherFrames(t *testing.T) {
+	var p pendingSize
+	if recordResizeFrame([]byte(`{"type":"data","data":"aGk="}`), &p) {
+		t.Fatal("data frames must not be treated as resizes")
+	}
+	if recordResizeFrame([]byte(`not json`), &p) {
+		t.Fatal("malformed frames must not be treated as resizes")
+	}
+	if _, _, ok := p.take(); ok {
+		t.Fatal("nothing should have been latched")
+	}
+}
+
+func TestRecordResizeFrameIgnoresNonPositive(t *testing.T) {
+	var p pendingSize
+	if recordResizeFrame([]byte(`{"type":"resize","cols":0,"rows":30}`), &p) {
+		t.Fatal("a zero dimension must be rejected")
+	}
+	if _, _, ok := p.take(); ok {
+		t.Fatal("nothing should have been latched")
+	}
+}
+
+func TestRecordResizeFrameToleratesNilHolder(t *testing.T) {
+	if !recordResizeFrame([]byte(`{"type":"resize","cols":120,"rows":30}`), nil) {
+		t.Fatal("a nil holder must still classify the frame as a resize")
+	}
+}

@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 )
@@ -57,4 +58,25 @@ func applyResize(r resizer, rows, cols, attempts int, delay time.Duration) error
 		}
 	}
 	return err
+}
+
+// recordResizeFrame reports whether raw is a resize frame, latching its size
+// into p when it is. p may be nil, in which case the frame is classified but
+// not recorded.
+func recordResizeFrame(raw []byte, p *pendingSize) bool {
+	var msg struct {
+		Type string `json:"type"`
+		Rows int    `json:"rows"`
+		Cols int    `json:"cols"`
+	}
+	if json.Unmarshal(raw, &msg) != nil || msg.Type != "resize" {
+		return false
+	}
+	if msg.Rows <= 0 || msg.Cols <= 0 {
+		return false
+	}
+	if p != nil {
+		p.store(msg.Rows, msg.Cols)
+	}
+	return true
 }
