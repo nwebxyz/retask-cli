@@ -62,7 +62,7 @@ func newSessionManager(
 
 // Start handles a new_session event: connects the session lane, runs bootstrap,
 // then launches the PTY and bridges it to the session lane.
-func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string) {
+func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
 	if name == "" {
 		name = sessionID
 	}
@@ -116,6 +116,12 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 
 	agCfg := sm.agentCfg
 	agCfg.Env = env
+	// Start the PTY at the browser's real geometry when the client reported
+	// one, so the session never renders at a default the user cannot see.
+	if cols > 0 && rows > 0 {
+		agCfg.PTYCols = cols
+		agCfg.PTYRows = rows
+	}
 
 	sm.logInfo("session_starting", "session_id", sessionID, "name", name, "init_command", initCommand)
 	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", shellCmd}, agCfg)
