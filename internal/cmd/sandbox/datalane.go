@@ -29,6 +29,10 @@ type dataLaneMsgNewSession struct {
 	Config       json.RawMessage `json:"config,omitempty"`
 	SystemPrompt string          `json:"system_prompt,omitempty"`
 	SeedPrompt   string          `json:"seed_prompt,omitempty"`
+	// Browser terminal geometry at connect time. Zero when the client did
+	// not report one; the session PTY defaults then apply.
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
 }
 
 type dataLaneMsg struct {
@@ -145,7 +149,7 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 				dl.logWarn("new_session_missing_payload", "session_id", msg.SessionID)
 				continue
 			}
-			go dl.sessions.Start(ctx, msg.SessionID, msg.Token, msg.NewSession.Name, msg.NewSession.Config, msg.NewSession.SystemPrompt, msg.NewSession.SeedPrompt)
+			go dl.sessions.Start(ctx, msg.SessionID, msg.Token, msg.NewSession.Name, msg.NewSession.Config, msg.NewSession.SystemPrompt, msg.NewSession.SeedPrompt, msg.NewSession.Cols, msg.NewSession.Rows)
 
 		case "stop_session":
 			dl.logInfo("stop_session", "session_id", msg.SessionID)

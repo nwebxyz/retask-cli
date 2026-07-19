@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	agentfleet "github.com/hoaitan/agentfleet"
@@ -62,7 +63,7 @@ func newSessionManager(
 
 // Start handles a new_session event: connects the session lane, runs bootstrap,
 // then launches the PTY and bridges it to the session lane.
-func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string) {
+func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
 	if name == "" {
 		name = sessionID
 	}
@@ -86,6 +87,14 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}
 	sm.logInfo("session_lane_connected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
 
+	// pending latches window sizes that arrive before the PTY exists: the
+	// initial geometry reported in the new_session frame, or a resize that
+	// races bootstrap. It is flushed once the PTY is up.
+	pending := &pendingSize{}
+	if cols > 0 && rows > 0 {
+		pending.store(rows, cols)
+	}
+
 	// Run bootstrap — writes files, clones repos, builds env.
 	sb := &SessionBootstrap{
 		SessionID:    sessionID,
@@ -99,6 +108,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		Endpoint:     sm.endpoint,
 		BaseDir:      sm.baseDir,
 		Log:          sm.log,
+		Pending:      pending,
 	}
 	sessionDir, env, err := sb.Run(ctx, wsConn)
 	if err != nil {
@@ -116,6 +126,12 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 
 	agCfg := sm.agentCfg
 	agCfg.Env = env
+	// Start the PTY at the browser's real geometry when the client reported
+	// one, so the session never renders at a default the user cannot see.
+	if cols > 0 && rows > 0 {
+		agCfg.PTYCols = cols
+		agCfg.PTYRows = rows
+	}
 
 	sm.logInfo("session_starting", "session_id", sessionID, "name", name, "init_command", initCommand)
 	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", shellCmd}, agCfg)
@@ -134,6 +150,23 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	sm.mu.Unlock()
 
 	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
+
+	// Apply any geometry that arrived before the PTY existed — from the
+	// new_session frame or from a resize during bootstrap. Runner.Start is
+	// non-blocking, so this retries until the PTY master fd is open. This
+	// must happen after SetOutput (so the retry/sleep window here doesn't
+	// delay bridging PTY output to the session-lane socket) and before
+	// readLoop starts (so buffered resize frames it drains can only refine
+	// the geometry, never regress it).
+	if pRows, pCols, ok := pending.take(); ok {
+		if err := applyResize(r, pRows, pCols, 20, 50*time.Millisecond); err != nil {
+			pending.store(pRows, pCols)
+			sm.logError("session_initial_resize_failed", "session_id", sessionID, "error", err)
+		} else {
+			sm.logInfo("session_initial_resize", "session_id", sessionID, "rows", pRows, "cols", pCols)
+		}
+	}
+
 	if sm.autoRespond {
 		// Watch the session's rendered screen (via the emulator) for known
 		// startup prompts (e.g. Claude Code's folder-trust dialog) and inject
@@ -182,7 +215,13 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			r.StdinWriter().Write(b) //nolint:errcheck
 		case "resize":
 			sm.logInfo("session_resize", "session_id", sessionID, "rows", msg.Rows, "cols", msg.Cols)
-			r.Resize(msg.Rows, msg.Cols) //nolint:errcheck
+			// Values <= 0 are ignored; values above maxPTYDimension are
+			// clamped down to it rather than ignored (see clampDimension).
+			if msg.Rows > 0 && msg.Cols > 0 {
+				if err := applyResize(r, clampDimension(msg.Rows), clampDimension(msg.Cols), 5, 50*time.Millisecond); err != nil {
+					sm.logError("session_resize_failed", "session_id", sessionID, "error", err)
+				}
+			}
 		}
 	}
 }
