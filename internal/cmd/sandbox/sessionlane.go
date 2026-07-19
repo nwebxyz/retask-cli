@@ -149,18 +149,24 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	sm.sessions[sessionID] = r
 	sm.mu.Unlock()
 
+	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
+
 	// Apply any geometry that arrived before the PTY existed — from the
 	// new_session frame or from a resize during bootstrap. Runner.Start is
-	// non-blocking, so this retries until the PTY master fd is open.
+	// non-blocking, so this retries until the PTY master fd is open. This
+	// must happen after SetOutput (so the retry/sleep window here doesn't
+	// delay bridging PTY output to the session-lane socket) and before
+	// readLoop starts (so buffered resize frames it drains can only refine
+	// the geometry, never regress it).
 	if pRows, pCols, ok := pending.take(); ok {
 		if err := applyResize(r, pRows, pCols, 20, 50*time.Millisecond); err != nil {
+			pending.store(pRows, pCols)
 			sm.logError("session_initial_resize_failed", "session_id", sessionID, "error", err)
 		} else {
 			sm.logInfo("session_initial_resize", "session_id", sessionID, "rows", pRows, "cols", pCols)
 		}
 	}
 
-	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 	if sm.autoRespond {
 		// Watch the session's rendered screen (via the emulator) for known
 		// startup prompts (e.g. Claude Code's folder-trust dialog) and inject
@@ -209,7 +215,7 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			r.StdinWriter().Write(b) //nolint:errcheck
 		case "resize":
 			sm.logInfo("session_resize", "session_id", sessionID, "rows", msg.Rows, "cols", msg.Cols)
-			if msg.Rows > 0 && msg.Cols > 0 {
+			if msg.Rows > 0 && msg.Cols > 0 && msg.Rows <= maxPTYDimension && msg.Cols <= maxPTYDimension {
 				if err := applyResize(r, msg.Rows, msg.Cols, 5, 50*time.Millisecond); err != nil {
 					sm.logError("session_resize_failed", "session_id", sessionID, "error", err)
 				}

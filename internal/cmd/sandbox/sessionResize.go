@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+// maxPTYDimension is the upper bound (inclusive) on a valid PTY dimension.
+// TIOCSWINSZ's fields are uint16, and a latched size is replayed to every
+// future VM attach, so an absurd value must be treated as invalid — never
+// clamped — the same as an absent one.
+const maxPTYDimension = 1000
+
 // pendingSize holds a window size that arrived before the PTY could accept it.
 //
 // Resize frames can reach us during bootstrap (repo clones, env setup), long
@@ -72,7 +78,7 @@ func recordResizeFrame(raw []byte, p *pendingSize) bool {
 	if json.Unmarshal(raw, &msg) != nil || msg.Type != "resize" {
 		return false
 	}
-	if msg.Rows <= 0 || msg.Cols <= 0 {
+	if msg.Rows <= 0 || msg.Cols <= 0 || msg.Rows > maxPTYDimension || msg.Cols > maxPTYDimension {
 		return false
 	}
 	if p != nil {

@@ -135,6 +135,41 @@ func TestRecordResizeFrameIgnoresNonPositive(t *testing.T) {
 	}
 }
 
+func TestRecordResizeFrameIgnoresOutOfRange(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{"zero rows", `{"type":"resize","cols":120,"rows":0}`},
+		{"negative cols", `{"type":"resize","cols":-1,"rows":30}`},
+		{"negative rows", `{"type":"resize","cols":120,"rows":-1}`},
+		{"cols above max", `{"type":"resize","cols":1001,"rows":30}`},
+		{"rows above max", `{"type":"resize","cols":120,"rows":1001}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var p pendingSize
+			if recordResizeFrame([]byte(tc.raw), &p) {
+				t.Fatalf("expected %s to be rejected", tc.name)
+			}
+			if _, _, ok := p.take(); ok {
+				t.Fatalf("nothing should have been latched for %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestRecordResizeFrameAcceptsMaxBoundary(t *testing.T) {
+	var p pendingSize
+	if !recordResizeFrame([]byte(`{"type":"resize","cols":1000,"rows":1000}`), &p) {
+		t.Fatal("a boundary size of exactly 1000 must be accepted")
+	}
+	rows, cols, ok := p.take()
+	if !ok || rows != 1000 || cols != 1000 {
+		t.Fatalf("got rows=%d cols=%d ok=%v, want 1000/1000/true", rows, cols, ok)
+	}
+}
+
 func TestRecordResizeFrameToleratesNilHolder(t *testing.T) {
 	if !recordResizeFrame([]byte(`{"type":"resize","cols":120,"rows":30}`), nil) {
 		t.Fatal("a nil holder must still classify the frame as a resize")
