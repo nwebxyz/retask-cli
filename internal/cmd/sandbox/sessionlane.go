@@ -342,8 +342,10 @@ func (w *wsWriter) Write(p []byte) (int, error) {
 		Type string `json:"type"`
 		Data string `json:"data"`
 	}{"data", base64.StdEncoding.EncodeToString(p)})
-	if err := w.conn.Write(w.ctx, websocket.MessageText, msg); err != nil {
-		return 0, err
-	}
+	// Swallow transport errors: a dead session-lane socket must never propagate
+	// failure into the agent's output path. The read pump detects the dead
+	// socket and detaches (redirecting output to io.Discard); the runner keeps
+	// running regardless of this socket's health.
+	_ = w.conn.Write(w.ctx, websocket.MessageText, msg) //nolint:errcheck
 	return len(p), nil
 }
