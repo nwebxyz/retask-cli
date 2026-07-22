@@ -62,9 +62,52 @@ func newSessionManager(
 	}
 }
 
-// Start handles a new_session event: connects the session lane, runs bootstrap,
-// then launches the PTY and bridges it to the session lane.
+// Start handles a new_session event. It is IDEMPOTENT: if session_id already
+// has a live runner (the relay lost its state, or the VM data-lane reconnected
+// and the relay re-sent new_session), re-bind a fresh session-lane to the
+// existing PTY instead of creating a second one.
 func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
+	sm.mu.Lock()
+	entry := sm.sessions[sessionID]
+	sm.mu.Unlock()
+	if entry != nil {
+		sm.attach(ctx, entry, sessionID, token, cols, rows)
+		return
+	}
+	sm.create(ctx, sessionID, token, name, configJSON, systemPrompt, seedPrompt, cols, rows)
+}
+
+// attach re-binds a fresh session-lane to an already-running runner. It never
+// bootstraps or spawns a new PTY. The token is the fresh session-lane token
+// from the re-sent new_session frame.
+func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessionID, token string, cols, rows int) {
+	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
+		sm.wsBase, sm.sandboxID, sessionID, token)
+	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		sm.logError("session_reattach_error", "session_id", sessionID, "error", err)
+		return
+	}
+	sm.logInfo("session_lane_reattached", "sandbox_id", sm.sandboxID, "session_id", sessionID)
+
+	// Swap in the new conn AND repoint output under the entry lock, so this
+	// never races a concurrent detach's SetOutput(io.Discard).
+	old := entry.swapConn(wsConn, func() {
+		entry.runner.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
+	})
+	if old != nil {
+		old.CloseNow() //nolint:errcheck
+	}
+	if cols > 0 && rows > 0 {
+		entry.runner.Resize(rows, cols) //nolint:errcheck
+	}
+	go sm.readPump(ctx, entry, sessionID, wsConn)
+}
+
+// create bootstraps a brand-new session: connects a session lane, runs
+// bootstrap, launches a new PTY, and bridges it. Called only when session_id is
+// not already tracked.
+func (sm *SessionManager) create(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
 	if name == "" {
 		name = sessionID
 	}
