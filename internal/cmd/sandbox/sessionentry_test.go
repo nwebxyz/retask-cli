@@ -19,12 +19,35 @@ func TestSessionEntry_SwapConn(t *testing.T) {
 	c2 := new(websocket.Conn)
 	e := newSessionEntry(nil, c1)
 
-	old := e.swapConn(c2, nil)
+	old, ok := e.swapConn(c2, nil)
+	if !ok {
+		t.Fatal("swapConn should succeed on a non-reaped entry")
+	}
 	if old != c1 {
 		t.Fatalf("swapConn returned %p, want old %p", old, c1)
 	}
 	if e.currentConn() != c2 {
 		t.Fatalf("currentConn = %p, want %p", e.currentConn(), c2)
+	}
+}
+
+func TestSessionEntry_Reap_BlocksSwap(t *testing.T) {
+	c1 := new(websocket.Conn)
+	c2 := new(websocket.Conn)
+	e := newSessionEntry(nil, c1)
+
+	if got := e.reap(); got != c1 {
+		t.Fatalf("reap returned %p, want %p", got, c1)
+	}
+	if e.currentConn() != nil {
+		t.Fatal("conn should be nil after reap")
+	}
+	old, ok := e.swapConn(c2, nil)
+	if ok {
+		t.Fatal("swapConn should refuse (ok=false) after reap")
+	}
+	if old != nil {
+		t.Fatalf("swapConn on reaped entry returned old=%p, want nil", old)
 	}
 }
 

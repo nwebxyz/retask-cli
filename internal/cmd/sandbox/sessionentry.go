@@ -15,8 +15,9 @@ import (
 type sessionEntry struct {
 	runner *agentfleet.Runner
 
-	mu   sync.Mutex
-	conn *websocket.Conn // current session-lane conn; nil when detached
+	mu     sync.Mutex
+	conn   *websocket.Conn // current session-lane conn; nil when detached
+	reaped bool            // true once the PTY has exited; blocks further swapConn
 }
 
 func newSessionEntry(r *agentfleet.Runner, conn *websocket.Conn) *sessionEntry {
@@ -33,16 +34,32 @@ func (e *sessionEntry) currentConn() *websocket.Conn {
 // swapConn installs conn as the current session-lane and returns the previous
 // one (which the caller should close). onSwap, if non-nil, runs while the entry
 // lock is held — use it to repoint the runner's output atomically with the conn
-// change, so a concurrent detach can't clobber the new output.
-func (e *sessionEntry) swapConn(conn *websocket.Conn, onSwap func()) (old *websocket.Conn) {
+// change. It returns ok=false and does nothing if the entry has been reaped (its
+// PTY exited); the caller must not bind a re-attach onto a dead runner.
+func (e *sessionEntry) swapConn(conn *websocket.Conn, onSwap func()) (old *websocket.Conn, ok bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.reaped {
+		return nil, false
+	}
 	old = e.conn
 	e.conn = conn
 	if onSwap != nil {
 		onSwap()
 	}
-	return old
+	return old, true
+}
+
+// reap marks the entry as reaped (its PTY has exited) and returns the current
+// conn for the caller to close, clearing it. After reap, swapConn refuses, so a
+// re-attach racing the delete can't bind onto the dead runner.
+func (e *sessionEntry) reap() (conn *websocket.Conn) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.reaped = true
+	conn = e.conn
+	e.conn = nil
+	return conn
 }
 
 // detachIfCurrent clears the connection only if it is still conn, returning true

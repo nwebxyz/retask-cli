@@ -35,6 +35,7 @@ type SessionManager struct {
 
 	mu       sync.Mutex
 	sessions map[string]*sessionEntry // keyed by session_id
+	creating map[string]struct{}      // session ids with a create() in flight
 }
 
 func newSessionManager(
@@ -59,6 +60,7 @@ func newSessionManager(
 		endpoint:    endpoint,
 		autoRespond: autoRespond,
 		sessions:    make(map[string]*sessionEntry),
+		creating:    make(map[string]struct{}),
 	}
 }
 
@@ -69,12 +71,27 @@ func newSessionManager(
 func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
 	sm.mu.Lock()
 	entry := sm.sessions[sessionID]
-	sm.mu.Unlock()
 	if entry != nil {
+		sm.mu.Unlock()
 		sm.attach(ctx, entry, sessionID, token, cols, rows)
 		return
 	}
+	if _, inflight := sm.creating[sessionID]; inflight {
+		// A create() for this session is already bootstrapping. A duplicate
+		// new_session must not spawn a second PTY — drop it.
+		sm.mu.Unlock()
+		sm.logInfo("new_session_ignored_creating", "session_id", sessionID)
+		return
+	}
+	sm.creating[sessionID] = struct{}{}
+	sm.mu.Unlock()
 	sm.create(ctx, sessionID, token, name, configJSON, systemPrompt, seedPrompt, cols, rows)
+}
+
+func (sm *SessionManager) clearCreating(sessionID string) {
+	sm.mu.Lock()
+	delete(sm.creating, sessionID)
+	sm.mu.Unlock()
 }
 
 // attach re-binds a fresh session-lane to an already-running runner. It never
@@ -92,9 +109,17 @@ func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessi
 
 	// Swap in the new conn AND repoint output under the entry lock, so this
 	// never races a concurrent detach's SetOutput(io.Discard).
-	old := entry.swapConn(wsConn, func() {
+	old, ok := entry.swapConn(wsConn, func() {
 		entry.runner.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 	})
+	if !ok {
+		// The entry was reaped (its PTY exited) between dispatch and here. Do not
+		// bind onto a dead runner; drop this stale re-attach. The client will
+		// reconnect and get a fresh session via create.
+		sm.logInfo("session_reattach_reaped", "session_id", sessionID)
+		wsConn.CloseNow() //nolint:errcheck
+		return
+	}
 	if old != nil {
 		old.CloseNow() //nolint:errcheck
 	}
@@ -108,6 +133,7 @@ func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessi
 // bootstrap, launches a new PTY, and bridges it. Called only when session_id is
 // not already tracked.
 func (sm *SessionManager) create(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
+	defer sm.clearCreating(sessionID)
 	if name == "" {
 		name = sessionID
 	}
@@ -226,7 +252,9 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	// socket is the one closed.
 	go func() {
 		<-r.Done()
-		if c := entry.currentConn(); c != nil {
+		// Mark reaped + take the current conn atomically, so a re-attach racing
+		// this delete gets ok=false from swapConn instead of binding a dead runner.
+		if c := entry.reap(); c != nil {
 			c.Close(websocket.StatusNormalClosure, "session ended") //nolint:errcheck
 		}
 		sm.mu.Lock()
