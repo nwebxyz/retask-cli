@@ -247,9 +247,8 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	// error detaches (see readPump) rather than stopping the agent.
 	go sm.readPump(ctx, entry, sessionID, wsConn)
 
-	// PTY-exit watcher: closes whichever socket is currently attached and
-	// removes the session. currentConn() (not a captured local) so a re-attached
-	// socket is the one closed.
+	// PTY-exit watcher: reaps the entry (so a racing re-attach is refused),
+	// closes whichever socket is currently attached, and removes the session.
 	go func() {
 		<-r.Done()
 		// Mark reaped + take the current conn atomically, so a re-attach racing
