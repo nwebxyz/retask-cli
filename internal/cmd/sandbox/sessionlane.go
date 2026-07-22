@@ -33,7 +33,7 @@ type SessionManager struct {
 	autoRespond bool // auto-accept known agent prompts (e.g. folder-trust)
 
 	mu       sync.Mutex
-	sessions map[string]*agentfleet.Runner // keyed by session_id
+	sessions map[string]*sessionEntry // keyed by session_id
 }
 
 func newSessionManager(
@@ -57,7 +57,7 @@ func newSessionManager(
 		baseDir:     baseDir,
 		endpoint:    endpoint,
 		autoRespond: autoRespond,
-		sessions:    make(map[string]*agentfleet.Runner),
+		sessions:    make(map[string]*sessionEntry),
 	}
 }
 
@@ -145,19 +145,14 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		return
 	}
 
+	entry := newSessionEntry(r, wsConn)
 	sm.mu.Lock()
-	sm.sessions[sessionID] = r
+	sm.sessions[sessionID] = entry
 	sm.mu.Unlock()
 
 	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 
-	// Apply any geometry that arrived before the PTY existed — from the
-	// new_session frame or from a resize during bootstrap. Runner.Start is
-	// non-blocking, so this retries until the PTY master fd is open. This
-	// must happen after SetOutput (so the retry/sleep window here doesn't
-	// delay bridging PTY output to the session-lane socket) and before
-	// readLoop starts (so buffered resize frames it drains can only refine
-	// the geometry, never regress it).
+	// (geometry apply block stays exactly as before — it uses `r` and `pending`)
 	if pRows, pCols, ok := pending.take(); ok {
 		if err := applyResize(r, pRows, pCols, 20, 50*time.Millisecond); err != nil {
 			pending.store(pRows, pCols)
@@ -168,21 +163,25 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}
 
 	if sm.autoRespond {
-		// Watch the session's rendered screen (via the emulator) for known
-		// startup prompts (e.g. Claude Code's folder-trust dialog) and inject
-		// the accept keystroke once, so unattended sessions don't stall waiting
-		// for a human. Stops once every rule has fired or the watch window ends.
 		go newPromptWatcher(r.Lines, r.StdinWriter(), defaultPromptRules(), defaultPollInterval, defaultPromptWindow, sm.log).Run(ctx)
 	}
+
+	// Read pump: bridge the session-lane socket to the PTY stdin. Behavior is
+	// preserved in this task (still Stop() on socket error); Task 3 flips it.
 	go func() {
-		err := sm.readLoop(ctx, wsConn, r, sessionID)
+		err := sm.readLoop(ctx, wsConn, entry.runner, sessionID)
 		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
-		r.Stop() //nolint:errcheck
+		entry.runner.Stop() //nolint:errcheck  // CHANGED IN TASK 3
 	}()
 
+	// PTY-exit watcher: closes whichever socket is currently attached and
+	// removes the session. currentConn() (not a captured local) so a re-attached
+	// socket is the one closed.
 	go func() {
 		<-r.Done()
-		wsConn.Close(websocket.StatusNormalClosure, "session ended") //nolint:errcheck
+		if c := entry.currentConn(); c != nil {
+			c.Close(websocket.StatusNormalClosure, "session ended") //nolint:errcheck
+		}
 		sm.mu.Lock()
 		delete(sm.sessions, sessionID)
 		sm.mu.Unlock()
@@ -226,27 +225,27 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 	}
 }
 
-// Stop sends SIGTERM to the session's PTY process.
+// Stop sends SIGTERM to the session's PTY process (keeps the folder).
 func (sm *SessionManager) Stop(sessionID string) {
 	sm.logInfo("session_stopping", "session_id", sessionID)
 	sm.mu.Lock()
-	r := sm.sessions[sessionID]
+	entry := sm.sessions[sessionID]
 	sm.mu.Unlock()
-	if r != nil {
-		r.Stop() //nolint:errcheck
+	if entry != nil {
+		entry.runner.Stop() //nolint:errcheck
 	}
 }
 
-// Remove stops the session's PTY and removes it from the fleet so it
-// disappears from the TUI immediately. Used for delete_session messages.
+// Remove stops the session's PTY, drops it from the fleet, and deletes its
+// folder. Used for delete_session.
 func (sm *SessionManager) Remove(sessionID string) {
 	sm.logInfo("session_removing", "session_id", sessionID)
 	sm.mu.Lock()
-	r := sm.sessions[sessionID]
+	entry := sm.sessions[sessionID]
 	delete(sm.sessions, sessionID)
 	sm.mu.Unlock()
-	if r != nil {
-		r.Stop() //nolint:errcheck
+	if entry != nil {
+		entry.runner.Stop() //nolint:errcheck
 		sm.fleet.Remove(sessionID)
 	}
 	os.RemoveAll(filepath.Join(sm.baseDir, "session-"+sessionID)) //nolint:errcheck
