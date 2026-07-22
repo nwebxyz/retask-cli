@@ -190,13 +190,17 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	}
 
 	entry := newSessionEntry(r, wsConn)
+	// Point output at the session-lane BEFORE publishing the entry, so the entry
+	// is never findable by a concurrent attach before its output is set (which
+	// would let attach's under-lock SetOutput be clobbered by this one).
+	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
 	sm.mu.Lock()
 	sm.sessions[sessionID] = entry
 	sm.mu.Unlock()
 
-	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
-
-	// (geometry apply block stays exactly as before — it uses `r` and `pending`)
+	// Apply any geometry latched before the PTY existed (from the new_session
+	// frame or a resize during bootstrap). Must run after SetOutput and before
+	// the read pump starts, so a buffered resize can only refine the geometry.
 	if pRows, pCols, ok := pending.take(); ok {
 		if err := applyResize(r, pRows, pCols, 20, 50*time.Millisecond); err != nil {
 			pending.store(pRows, pCols)
@@ -207,6 +211,9 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	}
 
 	if sm.autoRespond {
+		// Auto-accept known startup prompts (e.g. the agent's folder-trust
+		// dialog) so unattended sessions don't stall; stops once every rule has
+		// fired or the watch window ends.
 		go newPromptWatcher(r.Lines, r.StdinWriter(), defaultPromptRules(), defaultPollInterval, defaultPromptWindow, sm.log).Run(ctx)
 	}
 
@@ -235,6 +242,12 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 // left RUNNING (detached) and re-bound on the next new_session. The runner is
 // NEVER stopped here; only an explicit Stop/Remove ends it (teardown contract).
 func (sm *SessionManager) readPump(ctx context.Context, entry *sessionEntry, sessionID string, conn *websocket.Conn) {
+	// Release this session-lane's socket FD when the pump exits. coder/websocket
+	// does not close the socket on a read error, and the read uses the long-lived
+	// process ctx (no deadline), so without this an ungraceful drop (1006, RST,
+	// DO recycle) would hold the FD until GC. CloseNow is idempotent, so a
+	// concurrent attach/Done-watcher close is safe.
+	defer conn.CloseNow() //nolint:errcheck
 	err := sm.readLoop(ctx, conn, entry.runner, sessionID)
 	sm.logInfo("session_lane_detached", "session_id", sessionID, "error", err)
 	// Detach + redirect output to io.Discard atomically under the entry lock, so
