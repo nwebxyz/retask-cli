@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -166,13 +167,9 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		go newPromptWatcher(r.Lines, r.StdinWriter(), defaultPromptRules(), defaultPollInterval, defaultPromptWindow, sm.log).Run(ctx)
 	}
 
-	// Read pump: bridge the session-lane socket to the PTY stdin. Behavior is
-	// preserved in this task (still Stop() on socket error); Task 3 flips it.
-	go func() {
-		err := sm.readLoop(ctx, wsConn, entry.runner, sessionID)
-		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
-		entry.runner.Stop() //nolint:errcheck  // CHANGED IN TASK 3
-	}()
+	// Read pump: bridge the session-lane socket to the PTY stdin. A socket
+	// error detaches (see readPump) rather than stopping the agent.
+	go sm.readPump(ctx, entry, sessionID, wsConn)
 
 	// PTY-exit watcher: closes whichever socket is currently attached and
 	// removes the session. currentConn() (not a captured local) so a re-attached
@@ -188,6 +185,24 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		sm.fleet.Remove(sessionID)
 		sm.logInfo("session_stopped", "session_id", sessionID)
 	}()
+}
+
+// readPump bridges the session-lane socket to the runner's stdin until the
+// socket errors. A socket error means the viewer/relay went away — the PTY is
+// left RUNNING (detached) and re-bound on the next new_session. The runner is
+// NEVER stopped here; only an explicit Stop/Remove ends it (teardown contract).
+func (sm *SessionManager) readPump(ctx context.Context, entry *sessionEntry, sessionID string, conn *websocket.Conn) {
+	err := sm.readLoop(ctx, conn, entry.runner, sessionID)
+	sm.logInfo("session_lane_detached", "session_id", sessionID, "error", err)
+	// Only detach if this is still the current socket — a concurrent re-attach
+	// may have already installed a newer one.
+	if entry.detachIfCurrent(conn) {
+		// Stop encoding PTY output into a dead socket until re-attach. The agent
+		// keeps running; output produced while detached is not buffered (the
+		// relay's R2 replay covers history on re-attach — a small gap is
+		// accepted per the design).
+		entry.runner.SetOutput(io.Discard)
+	}
 }
 
 func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner, sessionID string) error {
