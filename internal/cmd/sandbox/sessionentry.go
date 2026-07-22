@@ -31,24 +31,33 @@ func (e *sessionEntry) currentConn() *websocket.Conn {
 }
 
 // swapConn installs conn as the current session-lane and returns the previous
-// one (which the caller should close). Used on re-attach.
-func (e *sessionEntry) swapConn(conn *websocket.Conn) (old *websocket.Conn) {
+// one (which the caller should close). onSwap, if non-nil, runs while the entry
+// lock is held — use it to repoint the runner's output atomically with the conn
+// change, so a concurrent detach can't clobber the new output.
+func (e *sessionEntry) swapConn(conn *websocket.Conn, onSwap func()) (old *websocket.Conn) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	old = e.conn
 	e.conn = conn
+	if onSwap != nil {
+		onSwap()
+	}
 	return old
 }
 
-// detachIfCurrent clears the connection only if it is still conn, returning
-// true when it did. A read pump calls this when its socket dies so it does not
-// clobber a newer connection installed by a concurrent re-attach.
-func (e *sessionEntry) detachIfCurrent(conn *websocket.Conn) bool {
+// detachIfCurrent clears the connection only if it is still conn, returning true
+// when it did. onDetach, if non-nil, runs (only on a true match) while the entry
+// lock is held — use it to redirect the runner's output atomically with the
+// detach, so it never clobbers a concurrent re-attach's output.
+func (e *sessionEntry) detachIfCurrent(conn *websocket.Conn, onDetach func()) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.conn == conn {
-		e.conn = nil
-		return true
+	if e.conn != conn {
+		return false
 	}
-	return false
+	e.conn = nil
+	if onDetach != nil {
+		onDetach()
+	}
+	return true
 }

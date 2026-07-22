@@ -194,15 +194,12 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 func (sm *SessionManager) readPump(ctx context.Context, entry *sessionEntry, sessionID string, conn *websocket.Conn) {
 	err := sm.readLoop(ctx, conn, entry.runner, sessionID)
 	sm.logInfo("session_lane_detached", "session_id", sessionID, "error", err)
-	// Only detach if this is still the current socket — a concurrent re-attach
-	// may have already installed a newer one.
-	if entry.detachIfCurrent(conn) {
-		// Stop encoding PTY output into a dead socket until re-attach. The agent
-		// keeps running; output produced while detached is not buffered (the
-		// relay's R2 replay covers history on re-attach — a small gap is
-		// accepted per the design).
+	// Detach + redirect output to io.Discard atomically under the entry lock, so
+	// this never clobbers the output a concurrent re-attach installed. The PTY
+	// keeps running either way.
+	entry.detachIfCurrent(conn, func() {
 		entry.runner.SetOutput(io.Discard)
-	}
+	})
 }
 
 func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner, sessionID string) error {
