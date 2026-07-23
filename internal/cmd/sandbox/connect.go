@@ -50,6 +50,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
 	var autoOpen bool
 	var noAutoRespond bool
+	var sessionBuffer string
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
 		Short: "Connect this machine as a Private VM sandbox",
@@ -63,15 +64,24 @@ Usage example:
   retask sandbox connect sandbox_abc123 --mode headless
   retask sandbox connect sandbox_abc123 --auto-open
 
+A dropped connection never tears down a running agent: the agent PTY is stopped
+only by an explicit stop/delete. Both lanes self-heal — the data lane and the
+session lane reconnect on their own with exponential backoff. While a session
+lane is down, its output is buffered (drop-oldest) and flushed to the proxy on
+reconnect, so the viewer keeps the most recent output across the gap.
+
 Flags:
-  --mode string      Running mode: auto, tui, headless (default: auto)
-  --auto-open        Auto-open a terminal tab for each new session (default: false)
-  --no-auto-respond  Disable auto-accepting known agent startup prompts (default: false)
+  --mode string       Running mode: auto, tui, headless (default: auto)
+  --auto-open         Auto-open a terminal tab for each new session (default: false)
+  --no-auto-respond   Disable auto-accepting known agent startup prompts (default: false)
+  --session-buffer    Per-session output retained across a session-lane drop, flushed on
+                      reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
 
 Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
   RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag
-  RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag`,
+  RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag
+  RETASK_SANDBOX_SESSION_BUFFER       Session output buffer size (overridden by --session-buffer)`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
@@ -159,6 +169,16 @@ Environment:
 				return err
 			}
 			autoRespond := !(noAutoRespond || os.Getenv("RETASK_SANDBOX_NO_AUTO_RESPOND") == "1")
+
+			// Per-session output buffer: flag wins, else env, else default.
+			if v := os.Getenv("RETASK_SANDBOX_SESSION_BUFFER"); v != "" && !cmd.Flags().Changed("session-buffer") {
+				sessionBuffer = v
+			}
+			sessionBufBytes, err := parseByteSize(sessionBuffer)
+			if err != nil {
+				return fmt.Errorf("--session-buffer: %w", err)
+			}
+
 			sm := newSessionManager(
 				sandboxID, wsBase,
 				fleet, fleetCfg.Fleet, fleetCfg.Agent,
@@ -168,6 +188,7 @@ Environment:
 				baseDir,
 				profile.Endpoint,
 				autoRespond,
+				sessionBufBytes,
 			)
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
@@ -197,6 +218,7 @@ Environment:
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Running mode: auto, tui, headless")
 	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
+	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
 	return cmd
 }
 

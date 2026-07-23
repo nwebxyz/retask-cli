@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,6 +17,15 @@ import (
 
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 )
+
+// wsDialer dials a WebSocket URL. It is a field on SessionManager so tests can
+// inject a fake in place of the real network dial.
+type wsDialer func(ctx context.Context, url string) (*websocket.Conn, error)
+
+func defaultWSDial(ctx context.Context, url string) (*websocket.Conn, error) {
+	c, _, err := websocket.Dial(ctx, url, nil)
+	return c, err
+}
 
 // SessionManager creates and tracks one agentfleet Runner per active sandbox session.
 type SessionManager struct {
@@ -33,6 +41,15 @@ type SessionManager struct {
 	endpoint    string
 	autoRespond bool // auto-accept known agent prompts (e.g. folder-trust)
 
+	// sessionBufBytes is the per-session outbound buffer retained across a
+	// session-lane drop (drop-oldest). 0 disables buffering.
+	sessionBufBytes int
+	// dial establishes a session-lane WebSocket; swappable for tests.
+	dial wsDialer
+	// Reconnect backoff bounds (fields, not consts, so tests can shrink them).
+	reconnectInitial time.Duration
+	reconnectMax     time.Duration
+
 	mu       sync.Mutex
 	sessions map[string]*sessionEntry // keyed by session_id
 	creating map[string]struct{}      // session ids with a create() in flight
@@ -46,22 +63,33 @@ func newSessionManager(
 	log *slog.Logger,
 	workspaceID, sandboxName, baseDir, endpoint string,
 	autoRespond bool,
+	sessionBufBytes int,
 ) *SessionManager {
 	return &SessionManager{
-		sandboxID:   sandboxID,
-		wsBase:      wsBase,
-		fleet:       fleet,
-		fleetCfg:    fleetCfg,
-		agentCfg:    agentCfg,
-		log:         log,
-		workspaceID: workspaceID,
-		sandboxName: sandboxName,
-		baseDir:     baseDir,
-		endpoint:    endpoint,
-		autoRespond: autoRespond,
-		sessions:    make(map[string]*sessionEntry),
-		creating:    make(map[string]struct{}),
+		sandboxID:       sandboxID,
+		wsBase:          wsBase,
+		fleet:           fleet,
+		fleetCfg:        fleetCfg,
+		agentCfg:        agentCfg,
+		log:             log,
+		workspaceID:     workspaceID,
+		sandboxName:     sandboxName,
+		baseDir:         baseDir,
+		endpoint:        endpoint,
+		autoRespond:      autoRespond,
+		sessionBufBytes:  sessionBufBytes,
+		dial:             defaultWSDial,
+		reconnectInitial: reconnectInitialBackoff,
+		reconnectMax:     reconnectMaxBackoff,
+		sessions:         make(map[string]*sessionEntry),
+		creating:         make(map[string]struct{}),
 	}
+}
+
+// sessionLaneURL builds the session-lane WebSocket URL for a (session, token).
+func (sm *SessionManager) sessionLaneURL(sessionID, token string) string {
+	return fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
+		sm.wsBase, sm.sandboxID, sessionID, token)
 }
 
 // Start handles a new_session event. It is IDEMPOTENT: if session_id already
@@ -98,27 +126,35 @@ func (sm *SessionManager) clearCreating(sessionID string) {
 // bootstraps or spawns a new PTY. The token is the fresh session-lane token
 // from the re-sent new_session frame.
 func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessionID, token string, cols, rows int) {
-	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
-		sm.wsBase, sm.sandboxID, sessionID, token)
-	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	// Record the freshest token/geometry so a later CLI-driven re-dial uses them.
+	entry.setReconnectParams(token, cols, rows)
+	wsConn, err := sm.dial(ctx, sm.sessionLaneURL(sessionID, token))
 	if err != nil {
 		sm.logError("session_reattach_error", "session_id", sessionID, "error", err)
 		return
 	}
 	sm.logInfo("session_lane_reattached", "sandbox_id", sm.sandboxID, "session_id", sessionID)
-
-	// Swap in the new conn AND repoint output under the entry lock, so this
-	// never races a concurrent detach's SetOutput(io.Discard).
-	old, ok := entry.swapConn(wsConn, func() {
-		entry.runner.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
-	})
-	if !ok {
-		// The entry was reaped (its PTY exited) between dispatch and here. Do not
-		// bind onto a dead runner; drop this stale re-attach. The client will
-		// reconnect and get a fresh session via create.
-		sm.logInfo("session_reattach_reaped", "session_id", sessionID)
+	if !sm.bindReattach(ctx, entry, sessionID, wsConn, cols, rows) {
 		wsConn.CloseNow() //nolint:errcheck
-		return
+	}
+}
+
+// bindReattach flushes buffered output to wsConn, adopts it as the session
+// lane, and starts a read pump — the shared tail of both the relay-driven
+// attach and the CLI reconnect loop. It returns false (and leaves wsConn for the
+// caller to close) if the entry was reaped or the buffer flush failed.
+func (sm *SessionManager) bindReattach(ctx context.Context, entry *sessionEntry, sessionID string, wsConn *websocket.Conn, cols, rows int) bool {
+	old, ok, err := entry.reattach(wsConn)
+	if err != nil {
+		// The fresh conn couldn't take the buffered backlog; caller retries.
+		sm.logError("session_reattach_flush_failed", "session_id", sessionID, "error", err)
+		return false
+	}
+	if !ok {
+		// The entry was reaped (its PTY exited). Do not bind onto a dead runner;
+		// the client will reconnect and get a fresh session via create.
+		sm.logInfo("session_reattach_reaped", "session_id", sessionID)
+		return false
 	}
 	if old != nil {
 		old.CloseNow() //nolint:errcheck
@@ -127,6 +163,7 @@ func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessi
 		entry.runner.Resize(rows, cols) //nolint:errcheck
 	}
 	go sm.readPump(ctx, entry, sessionID, wsConn)
+	return true
 }
 
 // create bootstraps a brand-new session: connects a session lane, runs
@@ -148,9 +185,7 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	}
 
 	// Connect session lane first so bootstrap can stream logs to the FE.
-	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
-		sm.wsBase, sm.sandboxID, sessionID, token)
-	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	wsConn, err := sm.dial(ctx, sm.sessionLaneURL(sessionID, token))
 	if err != nil {
 		sm.logError("session_lane_error", "session_id", sessionID, "error", err)
 		return
@@ -215,11 +250,15 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 		return
 	}
 
-	entry := newSessionEntry(r, wsConn)
-	// Point output at the session-lane BEFORE publishing the entry, so the entry
-	// is never findable by a concurrent attach before its output is set (which
-	// would let attach's under-lock SetOutput be clobbered by this one).
-	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
+	// The runner's output is a PERMANENT sessionWriter, set once here and never
+	// re-pointed: it sends to the current session-lane while attached and buffers
+	// (drop-oldest, up to sessionBufBytes) while detached, flushing the backlog on
+	// re-attach. It starts already attached to this conn. Set output BEFORE
+	// publishing the entry so a concurrent attach can never find the entry before
+	// its output exists.
+	writer := newSessionWriter(ctx, wsConn, sm.sessionBufBytes)
+	entry := newSessionEntry(r, writer, wsConn, token, cols, rows)
+	r.SetOutput(writer)
 	sm.mu.Lock()
 	sm.sessions[sessionID] = entry
 	sm.mu.Unlock()
@@ -252,7 +291,7 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	go func() {
 		<-r.Done()
 		// Mark reaped + take the current conn atomically, so a re-attach racing
-		// this delete gets ok=false from swapConn instead of binding a dead runner.
+		// this delete gets ok=false from reattach instead of binding a dead runner.
 		if c := entry.reap(); c != nil {
 			c.Close(websocket.StatusNormalClosure, "session ended") //nolint:errcheck
 		}
@@ -277,12 +316,64 @@ func (sm *SessionManager) readPump(ctx context.Context, entry *sessionEntry, ses
 	defer conn.CloseNow() //nolint:errcheck
 	err := sm.readLoop(ctx, conn, entry.runner, sessionID)
 	sm.logInfo("session_lane_detached", "session_id", sessionID, "error", err)
-	// Detach + redirect output to io.Discard atomically under the entry lock, so
+	// Detach + switch the writer to buffering atomically under the entry lock, so
 	// this never clobbers the output a concurrent re-attach installed. The PTY
-	// keeps running either way.
-	entry.detachIfCurrent(conn, func() {
-		entry.runner.SetOutput(io.Discard)
-	})
+	// keeps running either way. detachIfCurrent returns false for a stale conn
+	// (a newer conn is already live) — only the current conn's drop starts a
+	// reconnect, so we never spin up a redundant loop.
+	if entry.detachIfCurrent(conn, entry.writer.detach) {
+		sm.startReconnect(ctx, entry, sessionID)
+	}
+}
+
+// startReconnect launches the single CLI-driven reconnect loop for a session
+// whose lane just dropped. beginReconnect guarantees at most one loop, and none
+// once the entry is reaped.
+func (sm *SessionManager) startReconnect(ctx context.Context, entry *sessionEntry, sessionID string) {
+	if !entry.beginReconnect() {
+		return
+	}
+	go sm.reconnectLoop(ctx, entry, sessionID)
+}
+
+// reconnectLoop re-establishes a dropped session lane with the same long-lived
+// token, using the shared exponential backoff. On success the buffered output
+// flushes and live streaming resumes; the runner is never touched. It exits when
+// the session is reaped/stopped, another path (a relay new_session) re-attached
+// first, or the process context is cancelled.
+func (sm *SessionManager) reconnectLoop(ctx context.Context, entry *sessionEntry, sessionID string) {
+	defer entry.endReconnect()
+	backoff := sm.reconnectInitial
+	for {
+		if entry.isReaped() || entry.currentConn() != nil || ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if entry.isReaped() || entry.currentConn() != nil {
+			return
+		}
+		token, cols, rows := entry.reconnectParams()
+		wsConn, err := sm.dial(ctx, sm.sessionLaneURL(sessionID, token))
+		if err != nil {
+			sm.logWarn("session_lane_reconnect_error", "session_id", sessionID, "error", err, "retrying_in", backoff.String())
+			backoff = min(backoff*2, sm.reconnectMax)
+			continue
+		}
+		if sm.bindReattach(ctx, entry, sessionID, wsConn, cols, rows) {
+			sm.logInfo("session_lane_reconnected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
+			return
+		}
+		// Reaped → give up; flush error → discard the conn and retry with backoff.
+		wsConn.CloseNow() //nolint:errcheck
+		if entry.isReaped() {
+			return
+		}
+		backoff = min(backoff*2, sm.reconnectMax)
+	}
 }
 
 func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner, sessionID string) error {
@@ -371,21 +462,8 @@ func (sm *SessionManager) logError(msg string, args ...any) {
 	}
 }
 
-// wsWriter implements io.Writer, encoding bytes as base64 JSON to the session-lane WebSocket.
-type wsWriter struct {
-	ctx  context.Context
-	conn *websocket.Conn
-}
-
-func (w *wsWriter) Write(p []byte) (int, error) {
-	msg, _ := json.Marshal(struct {
-		Type string `json:"type"`
-		Data string `json:"data"`
-	}{"data", base64.StdEncoding.EncodeToString(p)})
-	// Swallow transport errors: a dead session-lane socket must never propagate
-	// failure into the agent's output path. The read pump detects the dead
-	// socket and detaches (redirecting output to io.Discard); the runner keeps
-	// running regardless of this socket's health.
-	_ = w.conn.Write(w.ctx, websocket.MessageText, msg) //nolint:errcheck
-	return len(p), nil
+func (sm *SessionManager) logWarn(msg string, args ...any) {
+	if sm.log != nil {
+		sm.log.Warn(msg, args...)
+	}
 }
