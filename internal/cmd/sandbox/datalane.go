@@ -22,6 +22,14 @@ const (
 	connStateError      int32 = 2
 )
 
+// Shared reconnect backoff for both lanes (data lane and session lane): start at
+// reconnectInitialBackoff, double on each failure, cap at reconnectMaxBackoff,
+// reset on a successful connect.
+const (
+	reconnectInitialBackoff = 2 * time.Second
+	reconnectMaxBackoff     = 30 * time.Second
+)
+
 var errSandboxDeleted = errors.New("sandbox deleted")
 
 type dataLaneMsgNewSession struct {
@@ -79,7 +87,7 @@ func (dl *DataLane) Send(msg dataLaneMsg) {
 // Run connects to the data lane and dispatches messages until ctx is cancelled
 // or a delete_sandbox message is received. Reconnects with exponential backoff.
 func (dl *DataLane) Run(ctx context.Context) {
-	backoff := 2 * time.Second
+	backoff := reconnectInitialBackoff
 	for {
 		err := dl.connectOnce(ctx)
 		if err == nil || errors.Is(err, errSandboxDeleted) || ctx.Err() != nil {
@@ -92,7 +100,7 @@ func (dl *DataLane) Run(ctx context.Context) {
 			return
 		case <-time.After(backoff):
 		}
-		backoff = min(backoff*2, 30*time.Second)
+		backoff = min(backoff*2, reconnectMaxBackoff)
 	}
 }
 
