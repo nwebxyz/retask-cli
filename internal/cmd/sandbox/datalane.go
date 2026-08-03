@@ -43,12 +43,21 @@ type dataLaneMsgNewSession struct {
 	Rows int `json:"rows,omitempty"`
 }
 
+// dataLaneMsgReconnectSession is the payload of a reconnect_session frame. It
+// deliberately carries only geometry: reconnect_session must not be able to
+// start a session, so there is no config, name or prompt to carry.
+type dataLaneMsgReconnectSession struct {
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
+}
+
 type dataLaneMsg struct {
-	Type       string                 `json:"type"`
-	SessionID  string                 `json:"session_id,omitempty"`
-	SandboxID  string                 `json:"sandbox_id,omitempty"`
-	Token      string                 `json:"token,omitempty"`
-	NewSession *dataLaneMsgNewSession `json:"new_session,omitempty"`
+	Type             string                       `json:"type"`
+	SessionID        string                       `json:"session_id,omitempty"`
+	SandboxID        string                       `json:"sandbox_id,omitempty"`
+	Token            string                       `json:"token,omitempty"`
+	NewSession       *dataLaneMsgNewSession       `json:"new_session,omitempty"`
+	ReconnectSession *dataLaneMsgReconnectSession `json:"reconnect_session,omitempty"`
 }
 
 // DataLane manages the persistent reverse WebSocket to sandbox-proxy.
@@ -158,6 +167,24 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 				continue
 			}
 			go dl.sessions.Start(ctx, msg.SessionID, msg.Token, msg.NewSession.Name, msg.NewSession.Config, msg.NewSession.SystemPrompt, msg.NewSession.SeedPrompt, msg.NewSession.Cols, msg.NewSession.Rows)
+
+		case "reconnect_session":
+			// The relay wants an existing session re-bound. Never create one
+			// here: if this process does not have it (a restarted connect, or
+			// the PTY exited) say so, and the relay hands that verdict to the
+			// viewer instead of starting a fresh PTY under an old session id.
+			dl.logInfo("reconnect_session", "session_id", msg.SessionID)
+			cols, rows := 0, 0
+			if msg.ReconnectSession != nil {
+				cols, rows = msg.ReconnectSession.Cols, msg.ReconnectSession.Rows
+			}
+			go func(sessionID, token string, cols, rows int) {
+				if dl.sessions.Reattach(ctx, sessionID, token, cols, rows) {
+					return
+				}
+				dl.logInfo("session_gone", "session_id", sessionID)
+				dl.Send(dataLaneMsg{Type: "session_gone", SessionID: sessionID})
+			}(msg.SessionID, msg.Token, cols, rows)
 
 		case "stop_session":
 			dl.logInfo("stop_session", "session_id", msg.SessionID)
