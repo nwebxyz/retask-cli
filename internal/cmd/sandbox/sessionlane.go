@@ -134,7 +134,12 @@ func (sm *SessionManager) clearCreating(sessionID string) {
 // A session still inside create() counts as present: its own lane dial is
 // already on the way, so reporting it gone would tell the viewer a session that
 // is merely still starting has died.
-func (sm *SessionManager) Reattach(ctx context.Context, sessionID, token string, cols, rows int) bool {
+//
+// The frame carries no token, and none is needed: session-lane tokens are
+// derived from (sandbox, session) rather than minted per frame, so the token
+// this process stored at new_session is the same value the relay would have
+// sent. We re-dial with our own copy.
+func (sm *SessionManager) Reattach(ctx context.Context, sessionID string, cols, rows int) bool {
 	sm.mu.Lock()
 	entry := sm.sessions[sessionID]
 	_, creating := sm.creating[sessionID]
@@ -143,6 +148,7 @@ func (sm *SessionManager) Reattach(ctx context.Context, sessionID, token string,
 	if entry == nil {
 		return creating
 	}
+	token, _, _ := entry.reconnectParams()
 	sm.attach(ctx, entry, sessionID, token, cols, rows)
 	return true
 }

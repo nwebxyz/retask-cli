@@ -178,13 +178,13 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 			if msg.ReconnectSession != nil {
 				cols, rows = msg.ReconnectSession.Cols, msg.ReconnectSession.Rows
 			}
-			go func(sessionID, token string, cols, rows int) {
-				if dl.sessions.Reattach(ctx, sessionID, token, cols, rows) {
+			go func(sessionID string, cols, rows int) {
+				if dl.sessions.Reattach(ctx, sessionID, cols, rows) {
 					return
 				}
 				dl.logInfo("session_gone", "session_id", sessionID)
 				dl.Send(dataLaneMsg{Type: "session_gone", SessionID: sessionID})
-			}(msg.SessionID, msg.Token, cols, rows)
+			}(msg.SessionID, cols, rows)
 
 		case "stop_session":
 			dl.logInfo("stop_session", "session_id", msg.SessionID)

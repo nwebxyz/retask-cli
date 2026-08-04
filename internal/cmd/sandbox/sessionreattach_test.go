@@ -18,7 +18,7 @@ func TestReattach_UnknownSessionIsGone(t *testing.T) {
 		return nil, nil
 	})
 
-	if sm.Reattach(context.Background(), "missing", "tok", 0, 0) {
+	if sm.Reattach(context.Background(), "missing", 0, 0) {
 		t.Fatal("Reattach = true, want false (no such session — relay must be told it is gone)")
 	}
 }
@@ -33,42 +33,47 @@ func TestReattach_BootstrappingSessionIsNotGone(t *testing.T) {
 	// create() is mid-flight and will dial its own lane. Reporting "gone" here
 	// would make the relay tell the viewer the session died while it is in fact
 	// still starting.
-	if !sm.Reattach(context.Background(), "sess", "tok", 0, 0) {
+	if !sm.Reattach(context.Background(), "sess", 0, 0) {
 		t.Fatal("Reattach = false, want true (session is bootstrapping, not gone)")
 	}
 }
 
-func TestReattach_KnownSessionRedialsWithGivenToken(t *testing.T) {
+// The relay does not put a token in reconnect_session: it is derived from
+// (sandbox, session), so the copy this process already holds is the same value.
+func TestReattach_KnownSessionRedialsWithItsOwnStoredToken(t *testing.T) {
 	var dialed string
 	sm := newReconnectTestManager(func(_ context.Context, url string) (*websocket.Conn, error) {
 		dialed = url
 		return nil, errors.New("dial failed") // stop before the bind
 	})
-	sm.sessions["sess"] = newTestEntry(new(websocket.Conn))
+	entry := newTestEntry(new(websocket.Conn))
+	entry.setReconnectParams("tok-stable", 0, 0)
+	sm.sessions["sess"] = entry
 
-	if !sm.Reattach(context.Background(), "sess", "tok-stable", 0, 0) {
+	if !sm.Reattach(context.Background(), "sess", 0, 0) {
 		t.Fatal("Reattach = false, want true (session is running here)")
 	}
 	if !strings.Contains(dialed, "session_id=sess") {
 		t.Fatalf("dialed %q, want it to carry session_id=sess", dialed)
 	}
 	if !strings.Contains(dialed, "token=tok-stable") {
-		t.Fatalf("dialed %q, want it to carry token=tok-stable", dialed)
+		t.Fatalf("dialed %q, want it to reuse the stored token", dialed)
 	}
 }
 
-func TestReattach_RecordsTokenForALaterRedial(t *testing.T) {
+func TestReattach_KeepsStoredTokenForALaterRedial(t *testing.T) {
 	sm := newReconnectTestManager(func(context.Context, string) (*websocket.Conn, error) {
 		return nil, errors.New("dial failed")
 	})
 	entry := newTestEntry(new(websocket.Conn))
+	entry.setReconnectParams("tok-stable", 0, 0)
 	sm.sessions["sess"] = entry
 
-	sm.Reattach(context.Background(), "sess", "tok-stable", 120, 40)
+	sm.Reattach(context.Background(), "sess", 120, 40)
 
 	token, cols, rows := entry.reconnectParams()
 	if token != "tok-stable" {
-		t.Fatalf("token = %q, want tok-stable", token)
+		t.Fatalf("token = %q, want the stored tok-stable", token)
 	}
 	if cols != 120 || rows != 40 {
 		t.Fatalf("geometry = %dx%d, want 120x40", cols, rows)
@@ -85,7 +90,7 @@ func TestReattach_KeepsKnownGeometryWhenNoneIsOffered(t *testing.T) {
 
 	// The relay has no viewer geometry to offer. That must not erase the size
 	// the PTY is actually running at — a later re-dial would resize it to 0x0.
-	sm.Reattach(context.Background(), "sess", "tok-stable", 0, 0)
+	sm.Reattach(context.Background(), "sess", 0, 0)
 
 	_, cols, rows := entry.reconnectParams()
 	if cols != 120 || rows != 40 {
