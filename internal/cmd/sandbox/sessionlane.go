@@ -122,9 +122,40 @@ func (sm *SessionManager) clearCreating(sessionID string) {
 	sm.mu.Unlock()
 }
 
+// Reattach answers the relay's reconnect_session: re-bind a session lane to a
+// PTY this process is already running. It NEVER bootstraps or spawns a PTY —
+// that is what new_session is for.
+//
+// It reports whether this process has the session. false means the session is
+// gone from here (this is a restarted `retask sandbox connect`, or the PTY has
+// exited), and the caller must tell the relay so, rather than letting a stale
+// session id quietly acquire a brand-new PTY.
+//
+// A session still inside create() counts as present: its own lane dial is
+// already on the way, so reporting it gone would tell the viewer a session that
+// is merely still starting has died.
+//
+// The frame carries no token, and none is needed: session-lane tokens are
+// derived from (sandbox, session) rather than minted per frame, so the token
+// this process stored at new_session is the same value the relay would have
+// sent. We re-dial with our own copy.
+func (sm *SessionManager) Reattach(ctx context.Context, sessionID string, cols, rows int) bool {
+	sm.mu.Lock()
+	entry := sm.sessions[sessionID]
+	_, creating := sm.creating[sessionID]
+	sm.mu.Unlock()
+
+	if entry == nil {
+		return creating
+	}
+	token, _, _ := entry.reconnectParams()
+	sm.attach(ctx, entry, sessionID, token, cols, rows)
+	return true
+}
+
 // attach re-binds a fresh session-lane to an already-running runner. It never
-// bootstraps or spawns a new PTY. The token is the fresh session-lane token
-// from the re-sent new_session frame.
+// bootstraps or spawns a new PTY. The token is the long-lived session-lane
+// token carried by the new_session / reconnect_session frame.
 func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessionID, token string, cols, rows int) {
 	// Record the freshest token/geometry so a later CLI-driven re-dial uses them.
 	entry.setReconnectParams(token, cols, rows)

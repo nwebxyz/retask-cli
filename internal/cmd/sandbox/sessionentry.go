@@ -127,9 +127,15 @@ func (e *sessionEntry) endReconnect() {
 }
 
 // setReconnectParams records the freshest token/geometry for a CLI re-dial.
+// A non-positive geometry means "not offered" and leaves the known size in
+// place: the relay has no viewer size to report when nobody is watching, and
+// erasing it would make the next re-dial resize the live PTY to 0x0.
 func (e *sessionEntry) setReconnectParams(token string, cols, rows int) {
 	e.mu.Lock()
-	e.token, e.cols, e.rows = token, cols, rows
+	e.token = token
+	if cols > 0 && rows > 0 {
+		e.cols, e.rows = cols, rows
+	}
 	e.mu.Unlock()
 }
 
