@@ -70,18 +70,30 @@ type DataLane struct {
 	connState *int32       // atomic
 	log       *slog.Logger // nil in TUI mode
 	sendCh    chan dataLaneMsg
+
+	// connect serves one data-lane connection until it drops; swappable for
+	// tests. It reports whether the socket was established, which is what lets
+	// Run tell a failed dial from a lane that worked and then went away.
+	connect func(ctx context.Context) (established bool, err error)
+	// Reconnect backoff bounds (fields, not consts, so tests can shrink them).
+	reconnectInitial time.Duration
+	reconnectMax     time.Duration
 }
 
 func newDataLane(sandboxID, wsBase, jwt string, sessions *SessionManager, connState *int32, log *slog.Logger) *DataLane {
-	return &DataLane{
-		sandboxID: sandboxID,
-		wsBase:    wsBase,
-		jwt:       jwt,
-		sessions:  sessions,
-		connState: connState,
-		log:       log,
-		sendCh:    make(chan dataLaneMsg, 8),
+	dl := &DataLane{
+		sandboxID:        sandboxID,
+		wsBase:           wsBase,
+		jwt:              jwt,
+		sessions:         sessions,
+		connState:        connState,
+		log:              log,
+		sendCh:           make(chan dataLaneMsg, 8),
+		reconnectInitial: reconnectInitialBackoff,
+		reconnectMax:     reconnectMaxBackoff,
 	}
+	dl.connect = dl.connectOnce
+	return dl
 }
 
 // Send queues a message to be written to the active data lane connection.
@@ -96,11 +108,19 @@ func (dl *DataLane) Send(msg dataLaneMsg) {
 // Run connects to the data lane and dispatches messages until ctx is cancelled
 // or a delete_sandbox message is received. Reconnects with exponential backoff.
 func (dl *DataLane) Run(ctx context.Context) {
-	backoff := reconnectInitialBackoff
+	backoff := dl.reconnectInitial
 	for {
-		err := dl.connectOnce(ctx)
+		established, err := dl.connect(ctx)
 		if err == nil || errors.Is(err, errSandboxDeleted) || ctx.Err() != nil {
 			return
+		}
+		// A lane that came up and later dropped starts the next incident from
+		// the initial backoff — the previous drop is settled, so escalating off
+		// it would punish a healthy long-lived connection for old history. Only
+		// a dial that never connected escalates. Same rule as the session lane,
+		// which gets it by building a fresh loop per drop (see reconnectLoop).
+		if established {
+			backoff = dl.reconnectInitial
 		}
 		atomic.StoreInt32(dl.connState, connStateError)
 		dl.logWarn("disconnected", "error", err, "retrying_in", backoff.String())
@@ -109,19 +129,22 @@ func (dl *DataLane) Run(ctx context.Context) {
 			return
 		case <-time.After(backoff):
 		}
-		backoff = min(backoff*2, reconnectMaxBackoff)
+		backoff = min(backoff*2, dl.reconnectMax)
 	}
 }
 
-// connectOnce dials the data lane and reads messages until an error or delete_sandbox.
-func (dl *DataLane) connectOnce(ctx context.Context) error {
+// connectOnce dials the data lane and reads messages until an error or
+// delete_sandbox. It reports whether the socket was established, so a drop on a
+// working lane is not mistaken for a dial that never landed.
+func (dl *DataLane) connectOnce(ctx context.Context) (established bool, err error) {
 	dialURL := fmt.Sprintf("%s/ws/data-lane?sandbox_id=%s&token=%s&client_version=%s",
 		dl.wsBase, dl.sandboxID, dl.jwt, url.QueryEscape(version.Version))
 
 	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
+	established = true
 	defer conn.CloseNow() //nolint:errcheck
 
 	atomic.StoreInt32(dl.connState, connStateConnected)
@@ -147,7 +170,7 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
-			return err
+			return established, err
 		}
 
 		var msg dataLaneMsg
@@ -202,7 +225,7 @@ func (dl *DataLane) connectOnce(ctx context.Context) error {
 			dl.logInfo("delete_sandbox", "sandbox_id", msg.SandboxID)
 			dl.sessions.StopAll()
 			conn.Close(websocket.StatusNormalClosure, "deleted") //nolint:errcheck
-			return errSandboxDeleted
+			return established, errSandboxDeleted
 		}
 	}
 }
