@@ -24,7 +24,9 @@ type wsDialer func(ctx context.Context, url string) (*websocket.Conn, error)
 
 func defaultWSDial(ctx context.Context, url string) (*websocket.Conn, error) {
 	c, _, err := websocket.Dial(ctx, url, nil)
-	return c, err
+	// A dial error quotes the URL it tried, JWT and all. Scrub it here so no
+	// caller can leak the token into the log panel or retask.log.
+	return c, redactErr(err)
 }
 
 // SessionManager creates and tracks one agentfleet Runner per active sandbox session.
