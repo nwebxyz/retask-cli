@@ -1,6 +1,6 @@
 module github.com/nwebxyz/retask-cli
 
-go 1.26.4
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
