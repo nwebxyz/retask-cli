@@ -51,6 +51,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var autoOpen bool
 	var noAutoRespond bool
 	var sessionBuffer string
+	var logFlags logFileFlags
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
 		Short: "Connect this machine as a Private VM sandbox",
@@ -70,18 +71,36 @@ session lane reconnect on their own with exponential backoff. While a session
 lane is down, its output is buffered (drop-oldest) and flushed to the proxy on
 reconnect, so the viewer keeps the most recent output across the gap.
 
+Every log line goes to two places: the TUI log panel (stderr in headless mode)
+and retask.log in the current folder. The log file rotates Unix-style — the live
+file keeps its name and older generations shift down through retask.log.1,
+retask.log.2, ... up to --log-backups. The TUI Logs divider shows the active path.
+
 Flags:
   --mode string       Running mode: auto, tui, headless (default: auto)
   --auto-open         Auto-open a terminal tab for each new session (default: false)
   --no-auto-respond   Disable auto-accepting known agent startup prompts (default: false)
   --session-buffer    Per-session output retained across a session-lane drop, flushed on
                       reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
+  --log-file string   Log file written alongside the TUI/stderr output, relative to the
+                      current folder (default: retask.log)
+  --no-log-file       Do not write a log file; log to the TUI/stderr only (default: false)
+  --log-max-size      Rotate the log file once it exceeds this size (default: 10MB).
+                      0 disables rotation. Accepts 512KB, 10MB, ...
+  --log-backups int   Rotated log generations kept, retask.log.1 ... retask.log.N
+                      (default: 5). 0 keeps none
+  --no-log-path       Hide the log file path from the TUI Logs divider (default: false)
 
 Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
   RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag
   RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag
-  RETASK_SANDBOX_SESSION_BUFFER       Session output buffer size (overridden by --session-buffer)`,
+  RETASK_SANDBOX_SESSION_BUFFER       Session output buffer size (overridden by --session-buffer)
+  RETASK_SANDBOX_LOG_FILE             Log file path (overridden by --log-file)
+  RETASK_SANDBOX_NO_LOG_FILE=1        Disable the log file without the flag
+  RETASK_SANDBOX_LOG_MAX_SIZE         Log rotation threshold (overridden by --log-max-size)
+  RETASK_SANDBOX_LOG_BACKUPS          Rotated generations kept (overridden by --log-backups)
+  RETASK_SANDBOX_NO_LOG_PATH=1        Hide the log path from the TUI without the flag`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
@@ -131,14 +150,38 @@ Environment:
 
 			useTUI := mode == "tui" || (mode == "auto" && term.IsTerminal(int(os.Stdout.Fd())))
 
-			// LogBuffer captures all events; in TUI mode it feeds the log panel,
-			// in headless mode it drains to stderr so output is identical.
-			logBuf := agentfleet.NewLogBuffer(500)
-			var logOut io.Writer = os.Stderr
-			if useTUI {
-				logOut = logBuf
+			// agentfleet config.
+			fleetCfg := agentfleet.DefaultConfig()
+			fleetCfg.Agent = sessionAgentConfig()
+			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
+			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
+			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_SANDBOX_AUTO_OPEN_SESSION") == "1"
+			fleetCfg.TUI.FilterLines = filterLines
+
+			logCfg, showLogPath, err := logFlags.resolve(cmd)
+			if err != nil {
+				return err
 			}
-			logger := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{
+			// A disabled log file yields a nil *LogFile, which discards writes,
+			// so the tee below needs no branch for it.
+			logFile, err := agentfleet.OpenLogFile(logCfg)
+			if err != nil {
+				return err
+			}
+			defer logFile.Close() //nolint:errcheck
+
+			// LogBuffer captures all events; in TUI mode it feeds the log panel,
+			// in headless mode it drains to stderr so output is identical. Either
+			// way the same lines are appended to the log file.
+			logBuf := agentfleet.NewLogBuffer(500)
+			var termOut io.Writer = os.Stderr
+			if useTUI {
+				termOut = logBuf
+				fleetCfg.TUI.Log = logBuf
+				fleetCfg.TUI.LogPath = logFile.Path()
+				fleetCfg.TUI.ShowLogPath = showLogPath
+			}
+			logger := slog.New(slog.NewTextHandler(io.MultiWriter(termOut, logFile), &slog.HandlerOptions{
 				Level: slog.LevelInfo,
 			}))
 
@@ -150,18 +193,9 @@ Environment:
 				"mode", mode,
 				"tui", useTUI,
 				"proxy", wsBase,
+				"log_file", logFile.Path(),
 			)
 
-			// agentfleet config.
-			fleetCfg := agentfleet.DefaultConfig()
-			fleetCfg.Agent = sessionAgentConfig()
-			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
-			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
-			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_SANDBOX_AUTO_OPEN_SESSION") == "1"
-			fleetCfg.TUI.FilterLines = filterLines
-			if useTUI {
-				fleetCfg.TUI.Log = logBuf
-			}
 			fleet := agentfleet.NewFleet(fleetCfg.Fleet)
 
 			baseDir, err := os.Getwd()
@@ -219,6 +253,7 @@ Environment:
 	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
+	logFlags.register(cmd)
 	return cmd
 }
 

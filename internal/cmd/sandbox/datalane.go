@@ -142,7 +142,9 @@ func (dl *DataLane) connectOnce(ctx context.Context) (established bool, err erro
 
 	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
-		return false, err
+		// The dial error quotes dialURL, JWT and all — scrub it before it
+		// reaches the log panel or retask.log.
+		return false, redactErr(err)
 	}
 	established = true
 	defer conn.CloseNow() //nolint:errcheck
