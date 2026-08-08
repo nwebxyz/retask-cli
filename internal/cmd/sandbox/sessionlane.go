@@ -135,10 +135,10 @@ func (sm *SessionManager) clearCreating(sessionID string) {
 // already on the way, so reporting it gone would tell the viewer a session that
 // is merely still starting has died.
 //
-// The frame carries no token, and none is needed: session-lane tokens are
-// derived from (sandbox, session) rather than minted per frame, so the token
-// this process stored at new_session is the same value the relay would have
-// sent. We re-dial with our own copy.
+// The frame carries no token, and none is needed: a session-lane token is
+// minted once, at new_session, and this process stored it then. We re-dial with
+// our own copy — the relay holds the matching one for the life of the session,
+// across its own restarts.
 func (sm *SessionManager) Reattach(ctx context.Context, sessionID string, cols, rows int) bool {
 	sm.mu.Lock()
 	entry := sm.sessions[sessionID]

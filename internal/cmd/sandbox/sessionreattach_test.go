@@ -38,8 +38,9 @@ func TestReattach_BootstrappingSessionIsNotGone(t *testing.T) {
 	}
 }
 
-// The relay does not put a token in reconnect_session: it is derived from
-// (sandbox, session), so the copy this process already holds is the same value.
+// The relay does not put a token in reconnect_session: it was minted once at
+// new_session, so the copy this process already holds is the value to re-dial
+// with.
 func TestReattach_KnownSessionRedialsWithItsOwnStoredToken(t *testing.T) {
 	var dialed string
 	sm := newReconnectTestManager(func(_ context.Context, url string) (*websocket.Conn, error) {
