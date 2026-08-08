@@ -161,7 +161,7 @@ func buildManifest() manifest {
 			{Command: "retask sandbox session update", Description: "Partial update a session", Flags: []string{"--name", "--seed-nrn", "--seed-prompt"}, Example: "retask sandbox session update <id> --name \"My Session\""},
 			{Command: "retask sandbox session stop", Description: "Stop a session", Example: "retask sandbox session stop <session-id>"},
 			{Command: "retask sandbox session delete", Description: "Delete a session", Example: "retask sandbox session delete <session-id>"},
-			{Command: "retask sandbox connect", Description: "Connect this machine as a Private VM sandbox (long-running)", Flags: []string{"--mode", "--auto-open", "--no-auto-respond"}, Example: "retask sandbox connect <sandbox-id>"},
+			{Command: "retask sandbox connect", Description: "Connect this machine as a Private VM sandbox (long-running). Logs go to the TUI (stderr when headless) and to retask.log in the current folder, which rotates into retask.log.1 ... retask.log.N", Flags: []string{"--mode", "--auto-open", "--no-auto-respond", "--session-buffer", "--log-file", "--no-log-file", "--log-max-size", "--log-backups", "--no-log-path"}, Example: "retask sandbox connect <sandbox-id>"},
 			{Command: "retask sandbox attach", Description: "Attach terminal to a running local session", Example: "retask sandbox attach <session-id>"},
 			{Command: "retask agent list", Description: "List agents", Flags: []string{"--role"}, Example: "retask agent list --role ROLE_TASK_PROCESSOR"},
 			{Command: "retask agent get", Description: "Get an agent by ID", Example: "retask agent get <agent-id>"},

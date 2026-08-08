@@ -30,3 +30,7 @@ api-contracts
 
 # GoReleaser output
 dist/
+
+# Connect log file (retask sandbox connect)
+retask.log
+retask.log.*

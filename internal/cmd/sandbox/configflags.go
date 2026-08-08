@@ -3,11 +3,43 @@ package sandbox
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	integrationv1 "github.com/nwebxyz/retask-cli/proto-gen/integration/v1"
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 )
+
+// parseByteSize parses a human byte size into a plain byte count. It accepts a
+// bare integer (bytes) or a binary suffix: B, KB, MB, GB (1024-based,
+// case-insensitive). "0" is valid and means "no buffering". Examples:
+// "0" → 0, "512KB" → 524288, "10MB" → 10485760.
+func parseByteSize(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty size")
+	}
+	up := strings.ToUpper(s)
+	mult := 1
+	switch {
+	case strings.HasSuffix(up, "GB"):
+		mult, up = 1<<30, strings.TrimSuffix(up, "GB")
+	case strings.HasSuffix(up, "MB"):
+		mult, up = 1<<20, strings.TrimSuffix(up, "MB")
+	case strings.HasSuffix(up, "KB"):
+		mult, up = 1<<10, strings.TrimSuffix(up, "KB")
+	case strings.HasSuffix(up, "B"):
+		up = strings.TrimSuffix(up, "B")
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(up))
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q: want a byte count like 0, 512KB, 10MB", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("invalid size %q: must not be negative", s)
+	}
+	return n * mult, nil
+}
 
 // parseEnvVar parses a "KEY=VALUE" string into a plain (non-secret) env var.
 // Only the first '=' separates key from value, so values may contain '='.
