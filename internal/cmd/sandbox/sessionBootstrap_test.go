@@ -289,3 +289,59 @@ func envToMap(env []string) map[string]string {
 	}
 	return m
 }
+
+// --- buildEnv: host terminal identity ---
+
+// A Private VM session's terminal is the browser's xterm.js, never the
+// terminal the operator ran `retask sandbox connect` from. Inheriting the
+// operator's terminal identity makes the agent probe for emulator features
+// that are not there; Claude Code's iTerm2/Terminal.app "external clear"
+// detector reads a replayed cursor report as a Cmd+K and submits /clear,
+// wiping the user's conversation.
+func TestBuildEnv_StripsHostTerminalIdentity(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"TERM_PROGRAM=iTerm.app",
+		"TERM_PROGRAM_VERSION=3.5.0",
+		"__CFBundleIdentifier=com.googlecode.iterm2",
+		"ITERM_SESSION_ID=w0t0p0",
+		"LC_TERMINAL=iTerm2",
+		"TERM_SESSION_ID=abc",
+		"TERMINAL_EMULATOR=JetBrains-JediTerm",
+		"TMUX=/tmp/tmux-501/default,1,0",
+		"COLORFGBG=15;0",
+	}
+	cfg := &sandboxv1.Sandbox_Config{}
+	m := envToMap(buildEnv(base, cfg, nil))
+
+	assert.Equal(t, "/usr/bin", m["PATH"], "unrelated host vars must survive")
+	for _, k := range []string{
+		"TERM_PROGRAM", "TERM_PROGRAM_VERSION", "__CFBundleIdentifier",
+		"ITERM_SESSION_ID", "LC_TERMINAL", "TERM_SESSION_ID",
+		"TERMINAL_EMULATOR", "TMUX", "COLORFGBG",
+	} {
+		_, ok := m[k]
+		assert.False(t, ok, "%s describes the operator's terminal and must not reach the session", k)
+	}
+}
+
+// Stripping the host terminal identity must leave the session with a truthful
+// one, not an absent one: without TERM the agent renders in degraded mode, and
+// without COLORTERM it drops from truecolor to 256 colors.
+func TestBuildEnv_SetsBrowserTerminalDefaults(t *testing.T) {
+	base := []string{"TERM=xterm-kitty", "TERM_PROGRAM=Apple_Terminal"}
+	m := envToMap(buildEnv(base, &sandboxv1.Sandbox_Config{}, nil))
+	assert.Equal(t, "xterm-256color", m["TERM"], "the session's terminal is xterm.js")
+	assert.Equal(t, "truecolor", m["COLORTERM"])
+}
+
+// The defaults sit in the host layer, so a deliberate config value still wins.
+func TestBuildEnv_ConfigOverridesTerminalDefaults(t *testing.T) {
+	cfg := &sandboxv1.Sandbox_Config{
+		EnvVars: []*sandboxv1.Sandbox_Config_EnvVar{
+			{Key: "TERM", Plain: "screen-256color"},
+		},
+	}
+	m := envToMap(buildEnv([]string{"TERM=xterm-kitty"}, cfg, nil))
+	assert.Equal(t, "screen-256color", m["TERM"])
+}
