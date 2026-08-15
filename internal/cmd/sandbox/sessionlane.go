@@ -43,6 +43,11 @@ type SessionManager struct {
 	endpoint    string
 	autoRespond bool // auto-accept known agent prompts (e.g. folder-trust)
 
+	// keepSessionFolder, when true, leaves a session's folder on disk after
+	// it is removed instead of deleting it. Default false: folders are
+	// deleted on removal to reclaim disk (git checkouts, node_modules, ...).
+	keepSessionFolder bool
+
 	// sessionBufBytes is the per-session outbound buffer retained across a
 	// session-lane drop (drop-oldest). 0 disables buffering.
 	sessionBufBytes int
@@ -66,25 +71,27 @@ func newSessionManager(
 	workspaceID, sandboxName, baseDir, endpoint string,
 	autoRespond bool,
 	sessionBufBytes int,
+	keepSessionFolder bool,
 ) *SessionManager {
 	return &SessionManager{
-		sandboxID:       sandboxID,
-		wsBase:          wsBase,
-		fleet:           fleet,
-		fleetCfg:        fleetCfg,
-		agentCfg:        agentCfg,
-		log:             log,
-		workspaceID:     workspaceID,
-		sandboxName:     sandboxName,
-		baseDir:         baseDir,
-		endpoint:        endpoint,
-		autoRespond:      autoRespond,
-		sessionBufBytes:  sessionBufBytes,
-		dial:             defaultWSDial,
-		reconnectInitial: reconnectInitialBackoff,
-		reconnectMax:     reconnectMaxBackoff,
-		sessions:         make(map[string]*sessionEntry),
-		creating:         make(map[string]struct{}),
+		sandboxID:         sandboxID,
+		wsBase:            wsBase,
+		fleet:             fleet,
+		fleetCfg:          fleetCfg,
+		agentCfg:          agentCfg,
+		log:               log,
+		workspaceID:       workspaceID,
+		sandboxName:       sandboxName,
+		baseDir:           baseDir,
+		endpoint:          endpoint,
+		autoRespond:       autoRespond,
+		sessionBufBytes:   sessionBufBytes,
+		keepSessionFolder: keepSessionFolder,
+		dial:              defaultWSDial,
+		reconnectInitial:  reconnectInitialBackoff,
+		reconnectMax:      reconnectMaxBackoff,
+		sessions:          make(map[string]*sessionEntry),
+		creating:          make(map[string]struct{}),
 	}
 }
 
@@ -456,7 +463,8 @@ func (sm *SessionManager) Stop(sessionID string) {
 }
 
 // Remove stops the session's PTY, drops it from the fleet, and deletes its
-// folder. Used for delete_session.
+// folder — unless keepSessionFolder is set, in which case the folder is left
+// on disk. Used for delete_session.
 func (sm *SessionManager) Remove(sessionID string) {
 	sm.logInfo("session_removing", "session_id", sessionID)
 	sm.mu.Lock()
@@ -466,6 +474,10 @@ func (sm *SessionManager) Remove(sessionID string) {
 	if entry != nil {
 		entry.runner.Stop() //nolint:errcheck
 		sm.fleet.Remove(sessionID)
+	}
+	if sm.keepSessionFolder {
+		sm.logInfo("session_folder_kept", "session_id", sessionID)
+		return
 	}
 	os.RemoveAll(filepath.Join(sm.baseDir, "session-"+sessionID)) //nolint:errcheck
 }

@@ -51,6 +51,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var autoOpen bool
 	var noAutoRespond bool
 	var sessionBuffer string
+	var keepSessionFolder bool
 	var logFlags logFileFlags
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
@@ -82,6 +83,8 @@ Flags:
   --no-auto-respond   Disable auto-accepting known agent startup prompts (default: false)
   --session-buffer    Per-session output retained across a session-lane drop, flushed on
                       reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
+  --keep-session-folder  Keep a session's folder on disk after it is removed, instead of
+                      deleting it (default: false)
   --log-file string   Log file written alongside the TUI/stderr output, relative to the
                       current folder (default: retask.log)
   --no-log-file       Do not write a log file; log to the TUI/stderr only (default: false)
@@ -96,6 +99,7 @@ Environment:
   RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag
   RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag
   RETASK_SANDBOX_SESSION_BUFFER       Session output buffer size (overridden by --session-buffer)
+  RETASK_SANDBOX_KEEP_SESSION_FOLDER=1  Keep session folders without the flag
   RETASK_SANDBOX_LOG_FILE             Log file path (overridden by --log-file)
   RETASK_SANDBOX_NO_LOG_FILE=1        Disable the log file without the flag
   RETASK_SANDBOX_LOG_MAX_SIZE         Log rotation threshold (overridden by --log-max-size)
@@ -203,6 +207,7 @@ Environment:
 				return err
 			}
 			autoRespond := !(noAutoRespond || os.Getenv("RETASK_SANDBOX_NO_AUTO_RESPOND") == "1")
+			keepSessionFolder = keepSessionFolder || os.Getenv("RETASK_SANDBOX_KEEP_SESSION_FOLDER") == "1"
 
 			// Per-session output buffer: flag wins, else env, else default.
 			if v := os.Getenv("RETASK_SANDBOX_SESSION_BUFFER"); v != "" && !cmd.Flags().Changed("session-buffer") {
@@ -223,6 +228,7 @@ Environment:
 				profile.Endpoint,
 				autoRespond,
 				sessionBufBytes,
+				keepSessionFolder,
 			)
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
@@ -253,6 +259,7 @@ Environment:
 	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
+	cmd.Flags().BoolVar(&keepSessionFolder, "keep-session-folder", false, "Keep a session's folder on disk after it is removed, instead of deleting it")
 	logFlags.register(cmd)
 	return cmd
 }
