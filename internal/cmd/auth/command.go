@@ -4,17 +4,21 @@ package auth
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
 	"github.com/nwebxyz/retask-cli/internal/flags"
 	"github.com/nwebxyz/retask-cli/internal/output"
+	"github.com/nwebxyz/retask-cli/internal/prompt"
 	authv1 "github.com/nwebxyz/retask-cli/proto-gen/auth/v1"
 	authv1connect "github.com/nwebxyz/retask-cli/proto-gen/auth/v1/authv1connect"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
@@ -62,14 +66,44 @@ func newLoginCommand(gf *flags.Global) *cobra.Command {
 		Short: "Exchange PAT for JWT and save to profile",
 		Long: `Exchange a Personal Access Token (NWEB_API_KEY) for a JWT and save it to the active profile.
 
+If NWEB_API_KEY or NWEB_WORKSPACE_ID are not set, retask prompts for them
+interactively (terminal only): it asks for your PAT (with a link to create
+one), then — if no workspace is configured — exchanges a short-lived,
+unsaved token to list your workspaces so you can pick one.
+
 Usage example:
   retask auth login
   eval $(retask auth login --no-save)   # shared sandbox: session-scoped credentials
 
 Environment:
-  NWEB_API_KEY        Required. PAT starting with "nweb_pat_..."
-  NWEB_WORKSPACE_ID   Required if not in profile or --workspace-id not set`,
+  NWEB_API_KEY        PAT starting with "nweb_pat_...". Prompted for if empty and running in a terminal.
+  NWEB_WORKSPACE_ID   Workspace to scope the JWT to. Prompted for (pick from a list) if empty and running in a terminal.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			profile, _, err := loadProfile(gf)
+			if err != nil {
+				return err
+			}
+
+			needsExchange := os.Getenv("NWEB_API_TOKEN") == "" && !hasValidCachedJWT(profile)
+
+			if needsExchange && os.Getenv("NWEB_API_KEY") == "" && prompt.IsInteractive() {
+				pat, err := promptForPAT(os.Stderr)
+				if err != nil {
+					return err
+				}
+				os.Setenv("NWEB_API_KEY", pat)
+			}
+
+			if needsExchange && flags.ResolveWorkspaceID(gf.WorkspaceID, profile) == "" && prompt.IsInteractive() {
+				if pat := os.Getenv("NWEB_API_KEY"); pat != "" {
+					wsID, err := pickWorkspace(context.Background(), profile, pat, gf.Insecure)
+					if err != nil {
+						return err
+					}
+					gf.WorkspaceID = wsID
+				}
+			}
+
 			resolver, err := buildResolver(gf)
 			if err != nil {
 				return err
@@ -89,6 +123,66 @@ Environment:
 			return output.Print(gf.Pretty, map[string]string{"status": "logged in"})
 		},
 	}
+}
+
+// hasValidCachedJWT reports whether the profile already has a JWT with more
+// than 5 minutes of validity left — mirrors auth.Resolver.Token's own cache
+// check (internal/auth/token.go), so login never prompts when it wouldn't
+// have exchanged anyway.
+func hasValidCachedJWT(p config.Profile) bool {
+	return p.CachedJWT != "" && time.Now().Add(5*time.Minute).Before(p.JWTExpiresAt)
+}
+
+// promptForPAT asks the user for their PAT on stdin, masking the input.
+func promptForPAT(out io.Writer) (pat string, err error) {
+	fmt.Fprintln(out, "No NWEB_API_KEY set.")
+	fmt.Fprintln(out, "Create a Personal Access Token: https://app.retask.work/access-tokens")
+	fmt.Fprint(out, "Enter NWEB_API_KEY: ")
+	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(out)
+	if err != nil {
+		return "", fmt.Errorf("read NWEB_API_KEY: %w", err)
+	}
+	pat = strings.TrimSpace(string(raw))
+	if pat == "" {
+		return "", fmt.Errorf("NWEB_API_KEY is required")
+	}
+	return pat, nil
+}
+
+// pickWorkspace exchanges pat for a short-lived, unscoped token (never
+// cached or persisted), uses it to list the caller's workspaces, and — if
+// there's more than one — lets the user pick interactively.
+func pickWorkspace(ctx context.Context, profile config.Profile, pat string, insecure bool) (workspaceID string, err error) {
+	fmt.Fprintln(os.Stderr, "No NWEB_WORKSPACE_ID set. Looking up your workspaces...")
+	tmpJWT, _, err := auth.ExchangePAT(ctx, profile.Endpoint, pat, "", insecure)
+	if err != nil {
+		return "", fmt.Errorf("list workspaces: %w", err)
+	}
+
+	httpClient := client.New(tmpJWT, insecure, false)
+	baseURL := client.BaseURL(profile.Endpoint, insecure)
+	wsSvc := workspacev1connect.NewWorkspaceServiceClient(httpClient, baseURL, connect.WithGRPC())
+	resp, err := wsSvc.GetWorkspaces(ctx, connect.NewRequest(&workspacev1.WorkspacesRequest{}))
+	if err != nil {
+		return "", fmt.Errorf("list workspaces: %w", err)
+	}
+
+	workspaces := resp.Msg.GetWorkspaces()
+	if len(workspaces) == 0 {
+		return "", fmt.Errorf("no workspaces found for this account")
+	}
+	if len(workspaces) == 1 {
+		fmt.Fprintf(os.Stderr, "Using workspace %q (%s)\n", workspaces[0].GetName(), workspaces[0].GetWorkspaceId())
+		return workspaces[0].GetWorkspaceId(), nil
+	}
+
+	items := make([]prompt.Item, len(workspaces))
+	for i, w := range workspaces {
+		items[i] = prompt.Item{ID: w.GetWorkspaceId(), Label: fmt.Sprintf("%s (%s)", w.GetName(), w.GetWorkspaceId())}
+	}
+	fmt.Fprintln(os.Stderr, "Select a workspace (up/down to move, enter to choose):")
+	return prompt.SelectOne(os.Stderr, items)
 }
 
 func newLogoutCommand(gf *flags.Global) *cobra.Command {
