@@ -100,11 +100,20 @@ func (r *Resolver) resolveWorkspaceID() (string, error) {
 	return "", fmt.Errorf("workspace ID is required")
 }
 
-func (r *Resolver) exchangePAT(ctx context.Context, pat, workspaceID string) (string, time.Time, error) {
-	// PAT exchange never carries a JWT header — the PAT is in the request body.
-	// Always use gRPC protocol regardless of NWEB_API_TRANSPORT (internal auth call).
-	httpClient := client.New("", r.Insecure, false)
-	baseURL := client.BaseURL(r.Profile.Endpoint, r.Insecure)
+func (r *Resolver) exchangePAT(ctx context.Context, pat, workspaceID string) (jwt string, expiresAt time.Time, err error) {
+	return ExchangePAT(ctx, r.Profile.Endpoint, pat, workspaceID, r.Insecure)
+}
+
+// ExchangePAT exchanges a raw PAT for a JWT scoped to workspaceID. An empty
+// workspaceID mints an unscoped, short-lived token with no workspace claim —
+// used only to list the caller's workspaces before a real login; the caller
+// must never cache or persist that token.
+//
+// PAT exchange never carries a JWT header — the PAT is in the request body.
+// Always use gRPC protocol regardless of NWEB_API_TRANSPORT (internal auth call).
+func ExchangePAT(ctx context.Context, endpoint, pat, workspaceID string, insecure bool) (jwt string, expiresAt time.Time, err error) {
+	httpClient := client.New("", insecure, false)
+	baseURL := client.BaseURL(endpoint, insecure)
 	authClient := authv1connect.NewAuthServiceClient(httpClient, baseURL, connect.WithGRPC())
 	resp, err := authClient.ExchangePat(ctx, connect.NewRequest(&authv1.PatExchangeRequest{
 		Token:       pat,
@@ -113,7 +122,6 @@ func (r *Resolver) exchangePAT(ctx context.Context, pat, workspaceID string) (st
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	var expiresAt time.Time
 	if resp.Msg.ExpiresAt != nil {
 		expiresAt = resp.Msg.ExpiresAt.AsTime()
 	}
