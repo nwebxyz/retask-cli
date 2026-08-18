@@ -3,6 +3,7 @@ package prompt
 import (
 	"bufio"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -107,5 +108,29 @@ func TestNextCursorMoves(t *testing.T) {
 func TestSelectOneEmptyItems(t *testing.T) {
 	if _, err := SelectOne(new(bytes.Buffer), nil); err == nil {
 		t.Fatal("expected error for empty items")
+	}
+}
+
+func TestRenderListIncludesNameAndDetail(t *testing.T) {
+	var buf bytes.Buffer
+	items := []Item{
+		{ID: "ws_1", Name: "Engineering", Detail: "ws_1"},
+		{ID: "ws_2", Name: "Design", Detail: "ws_2"},
+	}
+	renderList(&buf, items, 0)
+	out := buf.String()
+
+	for _, want := range []string{"Engineering", "ws_1", "Design", "ws_2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderList output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderListOmitsParensForEmptyDetail(t *testing.T) {
+	var buf bytes.Buffer
+	renderList(&buf, []Item{{ID: "x", Name: "Solo"}}, 0)
+	if strings.Contains(buf.String(), "()") {
+		t.Errorf("renderList should omit empty parens, got:\n%s", buf.String())
 	}
 }

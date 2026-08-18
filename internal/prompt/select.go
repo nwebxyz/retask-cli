@@ -7,14 +7,27 @@ import (
 	"io"
 	"os"
 
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 )
 
-// Item is a single selectable entry in an interactive list.
+// Item is a single selectable entry in an interactive list. Detail is
+// optional secondary text (e.g. an ID) rendered dimmed after Name.
 type Item struct {
-	ID    string
-	Label string
+	ID     string
+	Name   string
+	Detail string
 }
+
+// Colors match the palette already used for terminal output elsewhere in
+// this CLI (internal/cmd/sandbox/connect.go): #6b7280 for dimmed detail
+// text. #60a5fa (blue) is new here, used only to highlight the selected row.
+var (
+	styleName         = lipgloss.NewStyle().Bold(true)
+	styleNameSelected = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#60a5fa"))
+	styleDetail       = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280"))
+	styleCursor       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#60a5fa"))
+)
 
 // Key is a logical key press recognized by the picker.
 type Key int
@@ -125,9 +138,15 @@ func SelectOne(out io.Writer, items []Item) (id string, err error) {
 func renderList(out io.Writer, items []Item, cursor int) {
 	for i, it := range items {
 		prefix := "  "
+		nameStyle := styleName
 		if i == cursor {
-			prefix = "> "
+			prefix = styleCursor.Render("> ")
+			nameStyle = styleNameSelected
 		}
-		fmt.Fprintf(out, "\x1b[2K\r%s%s\r\n", prefix, it.Label)
+		detail := ""
+		if it.Detail != "" {
+			detail = " " + styleDetail.Render("("+it.Detail+")")
+		}
+		fmt.Fprintf(out, "\x1b[2K\r%s%s%s\r\n", prefix, nameStyle.Render(it.Name), detail)
 	}
 }

@@ -179,7 +179,7 @@ func pickWorkspace(ctx context.Context, profile config.Profile, pat string, inse
 
 	items := make([]prompt.Item, len(workspaces))
 	for i, w := range workspaces {
-		items[i] = prompt.Item{ID: w.GetWorkspaceId(), Label: fmt.Sprintf("%s (%s)", w.GetName(), w.GetWorkspaceId())}
+		items[i] = prompt.Item{ID: w.GetWorkspaceId(), Name: w.GetName(), Detail: w.GetWorkspaceId()}
 	}
 	fmt.Fprintln(os.Stderr, "Select a workspace (up/down to move, enter to choose):")
 	return prompt.SelectOne(os.Stderr, items)
