@@ -19,8 +19,8 @@ const sessionLogVersion = 1
 // rather than rewritten, so an older binary cannot truncate fields it lost.
 var errNewerLog = errors.New("session log written by a newer CLI version")
 
-// sessionEntry is one recorded session.
-type sessionEntry struct {
+// sessionLogEntry is one recorded session.
+type sessionLogEntry struct {
 	Name      string    `json:"name"`
 	Dir       string    `json:"dir"`
 	CreatedAt time.Time `json:"created_at"`
@@ -28,9 +28,9 @@ type sessionEntry struct {
 
 // sessionLogData is the on-disk shape of <sandbox_id>.json.
 type sessionLogData struct {
-	Version   int                     `json:"version"`
-	SandboxID string                  `json:"sandbox_id"`
-	Sessions  map[string]sessionEntry `json:"sessions"`
+	Version   int                        `json:"version"`
+	SandboxID string                     `json:"sandbox_id"`
+	Sessions  map[string]sessionLogEntry `json:"sessions"`
 }
 
 // sessionLog owns <baseDir>/<sandboxID>.json. It records when each session
@@ -93,7 +93,7 @@ func (l *sessionLog) load() (data *sessionLogData, err error) {
 		d = &sessionLogData{
 			Version:   sessionLogVersion,
 			SandboxID: l.sandboxID,
-			Sessions:  map[string]sessionEntry{},
+			Sessions:  map[string]sessionLogEntry{},
 		}
 	}
 	return d, nil
@@ -138,7 +138,7 @@ func (l *sessionLog) record(sessionID, name, dir string, createdAt time.Time) (e
 	if err != nil {
 		return err
 	}
-	d.Sessions[sessionID] = sessionEntry{Name: name, Dir: dir, CreatedAt: createdAt.UTC()}
+	d.Sessions[sessionID] = sessionLogEntry{Name: name, Dir: dir, CreatedAt: createdAt.UTC()}
 	return l.save(d)
 }
 
@@ -161,14 +161,14 @@ func (l *sessionLog) remove(sessionID string) (err error) {
 }
 
 // entries returns a copy of the recorded sessions.
-func (l *sessionLog) entries() (out map[string]sessionEntry, err error) {
+func (l *sessionLog) entries() (out map[string]sessionLogEntry, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	d, err := l.load()
 	if err != nil {
 		return nil, err
 	}
-	out = make(map[string]sessionEntry, len(d.Sessions))
+	out = make(map[string]sessionLogEntry, len(d.Sessions))
 	for k, v := range d.Sessions {
 		out[k] = v
 	}

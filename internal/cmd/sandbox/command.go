@@ -4,9 +4,9 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	connectrpc "connectrpc.com/connect"
-	"github.com/spf13/cobra"
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
 	"github.com/nwebxyz/retask-cli/internal/config"
@@ -15,6 +15,8 @@ import (
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 	sandboxv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1/sandboxv1connect"
+	workspacev1 "github.com/nwebxyz/retask-cli/proto-gen/workspace/v1"
+	"github.com/spf13/cobra"
 )
 
 // NewCommand returns the top-level "sandbox" cobra command.
@@ -152,7 +154,7 @@ Output fields: sandbox_id, workspace_id, name, type, status, config, created_at,
 // ── sandbox create ────────────────────────────────────────────────────────────
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
-	var name, templateID, sandboxType string
+	var name, templateID, sandboxType, sharing string
 	var env, gitRepos, integrationIDs []string
 	var startupCmd, sessionInitCmd, shutdownPolicy string
 	cmd := &cobra.Command{
@@ -163,6 +165,7 @@ func newCreateCommand(gf *flags.Global) *cobra.Command {
 Usage examples:
   retask sandbox create --name "My Sandbox"
   retask sandbox create --name "My Sandbox" --type PRIVATE
+  retask sandbox create --name "My Sandbox" --type PRIVATE --sharing WORKSPACE_EDIT
   retask sandbox create --name "My Sandbox" --template-id tmpl_abc123
   retask sandbox create --name "My Sandbox" --env KEY=VALUE --git-repo url=https://github.com/org/repo
   retask sandbox create --name "My Sandbox" --session-init-command 'claude --dangerously-skip-permissions "$SEED_PROMPT"'
@@ -170,6 +173,9 @@ Usage examples:
 Flags:
   --name string                      Required. Sandbox name
   --type string                      Optional. Sandbox type: CLOUD, PRIVATE (default CLOUD)
+  --sharing string                   Optional. Who in the workspace can use this sandbox:
+                                     WORKSPACE_EDIT, WORKSPACE_VIEW, PRIVATE (default PRIVATE).
+                                     Agents can only run on a WORKSPACE_* sandbox.
   --template-id string               Optional. Source template ID to fork config from.
                                      Mutually exclusive with the config flags below.
   --env KEY=VALUE                    Optional, repeatable. Plain env var (value may contain '=').
@@ -200,6 +206,13 @@ Output fields: sandbox_id`,
 				}
 				sandbox.Type = sandboxv1.Sandbox_Type(v)
 			}
+			if cmd.Flags().Changed("sharing") {
+				sh, err := parseSharing(sharing)
+				if err != nil {
+					return err
+				}
+				sandbox.Sharing = sh
+			}
 
 			cfg, err := buildConfig(templateID, env, gitRepos, startupCmd, sessionInitCmd, shutdownPolicy, integrationIDs)
 			if err != nil {
@@ -221,6 +234,7 @@ Output fields: sandbox_id`,
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Sandbox name (required)")
 	cmd.Flags().StringVar(&sandboxType, "type", "", "Sandbox type: CLOUD, PRIVATE (default CLOUD)")
+	cmd.Flags().StringVar(&sharing, "sharing", "", "Who can use this sandbox: "+strings.Join(sharingNames, ", ")+" (default PRIVATE)")
 	cmd.Flags().StringVar(&templateID, "template-id", "", "Source template ID to fork config from (mutually exclusive with config flags)")
 	cmd.Flags().StringArrayVar(&env, "env", nil, "Plain env var KEY=VALUE (repeatable)")
 	cmd.Flags().StringArrayVar(&gitRepos, "git-repo", nil, "Git repo url=...[,branch=...][,dir=...] (repeatable)")
@@ -234,7 +248,7 @@ Output fields: sandbox_id`,
 // ── sandbox update ────────────────────────────────────────────────────────────
 
 func newUpdateCommand(gf *flags.Global) *cobra.Command {
-	var name string
+	var name, sharing string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update an existing sandbox",
@@ -242,15 +256,28 @@ func newUpdateCommand(gf *flags.Global) *cobra.Command {
 
 Usage examples:
   retask sandbox update sandbox_abc123 --name "New Name"
+  retask sandbox update sandbox_abc123 --sharing WORKSPACE_EDIT
 
 Flags:
-  --name string   New sandbox name
+  --name string      New sandbox name
+  --sharing string   Who in the workspace can use this sandbox:
+                     WORKSPACE_EDIT, WORKSPACE_VIEW, PRIVATE.
+                     Agents can only run on a WORKSPACE_* sandbox.
 
 Output fields: sandbox_id`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cmd.Flags().Changed("name") {
+			if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("sharing") {
 				return fmt.Errorf("no fields to update: provide at least one flag")
+			}
+
+			var sh *workspacev1.Sharing
+			if cmd.Flags().Changed("sharing") {
+				parsed, err := parseSharing(sharing)
+				if err != nil {
+					return err
+				}
+				sh = parsed
 			}
 
 			svc, close, err := connect(gf)
@@ -267,6 +294,9 @@ Output fields: sandbox_id`,
 			if cmd.Flags().Changed("name") {
 				existing.Msg.Name = name
 			}
+			if sh != nil {
+				existing.Msg.Sharing = sh
+			}
 			resp, err := svc.SetSandbox(context.Background(), connectrpc.NewRequest(existing.Msg))
 			if err != nil {
 				return err
@@ -275,6 +305,7 @@ Output fields: sandbox_id`,
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New sandbox name")
+	cmd.Flags().StringVar(&sharing, "sharing", "", "Who can use this sandbox: "+strings.Join(sharingNames, ", "))
 	return cmd
 }
 

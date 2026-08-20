@@ -47,7 +47,7 @@ func TestVersionLabel(t *testing.T) {
 	}
 }
 
-func TestWsWriterWrite(t *testing.T) {
+func TestSessionWriter_LiveWriteOverRealSocket(t *testing.T) {
 	received := make(chan []byte, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +69,7 @@ func TestWsWriterWrite(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.CloseNow()
 
-	ww := &wsWriter{ctx: ctx, conn: conn}
+	ww := newSessionWriter(ctx, conn, 1024)
 	input := []byte("hello sandbox")
 	n, err := ww.Write(input)
 	assert.NoError(t, err)

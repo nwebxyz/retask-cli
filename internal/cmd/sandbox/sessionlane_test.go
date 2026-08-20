@@ -6,20 +6,24 @@ import (
 	"testing"
 	"time"
 
-	agentfleet "github.com/hoaitan/agentfleet"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // newTestSessionManager builds a SessionManager with only the fields the log
-// and teardown tests need — no fleet, no websockets, no PTYs.
+// and teardown tests need — no fleet, no websockets, no PTYs. sessions is left
+// empty: these tests cover the "no live entry" teardown path (a restart lost
+// it, or nothing was ever attached), matching how Remove/RemoveAll behave when
+// sm.sessions has no entry for the id — folder and log cleanup still run.
+// drain() itself is exercised directly below via fakeRunner, decoupled from
+// SessionManager/sessionEntry construction.
 func newTestSessionManager(t *testing.T, baseDir string) *SessionManager {
 	t.Helper()
 	return &SessionManager{
 		sandboxID:  "sb-1",
 		baseDir:    baseDir,
 		sessionLog: newSessionLog(baseDir, "sb-1"),
-		sessions:   map[string]*agentfleet.Runner{},
+		sessions:   map[string]*sessionEntry{},
 	}
 }
 

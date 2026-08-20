@@ -11,11 +11,16 @@ import (
 
 const DefaultEndpoint = "api.nweb.app:443"
 
+// DefaultRestAPIEndpoint is the REST host used for file uploads. Unlike
+// Endpoint (a gRPC host:port), this is a full URL and is used verbatim.
+const DefaultRestAPIEndpoint = "https://rest-api.nweb.app"
+
 type Profile struct {
-	Endpoint     string    `yaml:"endpoint"`
-	WorkspaceID  string    `yaml:"workspace_id,omitempty"`
-	CachedJWT    string    `yaml:"cached_jwt,omitempty"`
-	JWTExpiresAt time.Time `yaml:"jwt_expires_at,omitempty"`
+	Endpoint        string    `yaml:"endpoint"`
+	RestAPIEndpoint string    `yaml:"rest_api_endpoint,omitempty"`
+	WorkspaceID     string    `yaml:"workspace_id,omitempty"`
+	CachedJWT       string    `yaml:"cached_jwt,omitempty"`
+	JWTExpiresAt    time.Time `yaml:"jwt_expires_at,omitempty"`
 }
 
 type Config struct {
@@ -34,7 +39,7 @@ func Load(path string) (*Config, error) {
 		return &Config{
 			ActiveProfile: "default",
 			Profiles: map[string]Profile{
-				"default": {Endpoint: DefaultEndpoint},
+				"default": {Endpoint: DefaultEndpoint, RestAPIEndpoint: DefaultRestAPIEndpoint},
 			},
 		}, nil
 	}
@@ -72,13 +77,19 @@ func (c *Config) ActiveProfileData(name string) Profile {
 	}
 	p, ok := c.Profiles[name]
 	if !ok {
-		p = Profile{Endpoint: DefaultEndpoint}
+		p = Profile{Endpoint: DefaultEndpoint, RestAPIEndpoint: DefaultRestAPIEndpoint}
 	}
 	if p.Endpoint == "" {
 		p.Endpoint = DefaultEndpoint
 	}
+	if p.RestAPIEndpoint == "" {
+		p.RestAPIEndpoint = DefaultRestAPIEndpoint
+	}
 	if v := os.Getenv("NWEB_API_ENDPOINT"); v != "" {
 		p.Endpoint = v
+	}
+	if v := os.Getenv("NWEB_REST_API_ENDPOINT"); v != "" {
+		p.RestAPIEndpoint = v
 	}
 	return p
 }

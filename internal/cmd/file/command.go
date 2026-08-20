@@ -26,6 +26,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 		Short: "Manage files",
 	}
 	cmd.AddCommand(
+		newUploadCommand(gf),
 		newListCommand(gf),
 		newGetCommand(gf),
 		newDeleteCommand(gf),

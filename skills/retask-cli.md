@@ -30,6 +30,13 @@ retask auth login
 eval $(retask auth login --no-save)
 ```
 
+Both env vars are optional when running in a terminal: `retask auth login`
+prompts for a missing `NWEB_API_KEY` (with a link to
+https://app.retask.work/access-tokens to create one) and, if
+`NWEB_WORKSPACE_ID` is also missing, lists your workspaces to pick from.
+Agents and scripts running non-interactively should keep setting both env
+vars up front — there is no prompt without a terminal.
+
 ## Auth
 retask resolves a JWT in priority order:
 1. **`NWEB_API_TOKEN`** — if set, this ready-to-use JWT is used directly and PAT exchange is skipped entirely.

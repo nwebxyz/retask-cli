@@ -48,6 +48,17 @@ func drain(r stoppableRunner, timeout time.Duration) {
 	}
 }
 
+// wsDialer dials a WebSocket URL. It is a field on SessionManager so tests can
+// inject a fake in place of the real network dial.
+type wsDialer func(ctx context.Context, url string) (*websocket.Conn, error)
+
+func defaultWSDial(ctx context.Context, url string) (*websocket.Conn, error) {
+	c, _, err := websocket.Dial(ctx, url, nil)
+	// A dial error quotes the URL it tried, JWT and all. Scrub it here so no
+	// caller can leak the token into the log panel or retask.log.
+	return c, redactErr(err)
+}
+
 // SessionManager creates and tracks one agentfleet Runner per active sandbox session.
 type SessionManager struct {
 	sandboxID   string
@@ -63,8 +74,18 @@ type SessionManager struct {
 	sessionLog  *sessionLog // records session start times for retention
 	autoRespond bool        // auto-accept known agent prompts (e.g. folder-trust)
 
+	// sessionBufBytes is the per-session outbound buffer retained across a
+	// session-lane drop (drop-oldest). 0 disables buffering.
+	sessionBufBytes int
+	// dial establishes a session-lane WebSocket; swappable for tests.
+	dial wsDialer
+	// Reconnect backoff bounds (fields, not consts, so tests can shrink them).
+	reconnectInitial time.Duration
+	reconnectMax     time.Duration
+
 	mu       sync.Mutex
-	sessions map[string]*agentfleet.Runner // keyed by session_id
+	sessions map[string]*sessionEntry // keyed by session_id
+	creating map[string]struct{}      // session ids with a create() in flight
 }
 
 func newSessionManager(
@@ -76,22 +97,34 @@ func newSessionManager(
 	workspaceID, sandboxName, baseDir, endpoint string,
 	sessLog *sessionLog,
 	autoRespond bool,
+	sessionBufBytes int,
 ) *SessionManager {
 	return &SessionManager{
-		sandboxID:   sandboxID,
-		wsBase:      wsBase,
-		fleet:       fleet,
-		fleetCfg:    fleetCfg,
-		agentCfg:    agentCfg,
-		log:         log,
-		workspaceID: workspaceID,
-		sandboxName: sandboxName,
-		baseDir:     baseDir,
-		endpoint:    endpoint,
-		sessionLog:  sessLog,
-		autoRespond: autoRespond,
-		sessions:    make(map[string]*agentfleet.Runner),
+		sandboxID:        sandboxID,
+		wsBase:           wsBase,
+		fleet:            fleet,
+		fleetCfg:         fleetCfg,
+		agentCfg:         agentCfg,
+		log:              log,
+		workspaceID:      workspaceID,
+		sandboxName:      sandboxName,
+		baseDir:          baseDir,
+		endpoint:         endpoint,
+		sessionLog:       sessLog,
+		autoRespond:      autoRespond,
+		sessionBufBytes:  sessionBufBytes,
+		dial:             defaultWSDial,
+		reconnectInitial: reconnectInitialBackoff,
+		reconnectMax:     reconnectMaxBackoff,
+		sessions:         make(map[string]*sessionEntry),
+		creating:         make(map[string]struct{}),
 	}
+}
+
+// sessionLaneURL builds the session-lane WebSocket URL for a (session, token).
+func (sm *SessionManager) sessionLaneURL(sessionID, token string) string {
+	return fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
+		sm.wsBase, sm.sandboxID, sessionID, token)
 }
 
 // recordSessionStart logs when a session started, before bootstrap runs.
@@ -116,9 +149,116 @@ func (sm *SessionManager) isActive(sessionID string) bool {
 	return ok
 }
 
-// Start handles a new_session event: connects the session lane, runs bootstrap,
-// then launches the PTY and bridges it to the session lane.
-func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string) {
+// Start handles a new_session event. It is IDEMPOTENT: if session_id already
+// has a live runner (the relay lost its state, or the VM data-lane reconnected
+// and the relay re-sent new_session), re-bind a fresh session-lane to the
+// existing PTY instead of creating a second one.
+func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
+	sm.mu.Lock()
+	entry := sm.sessions[sessionID]
+	if entry != nil {
+		sm.mu.Unlock()
+		sm.attach(ctx, entry, sessionID, token, cols, rows)
+		return
+	}
+	if _, inflight := sm.creating[sessionID]; inflight {
+		// A create() for this session is already bootstrapping. A duplicate
+		// new_session must not spawn a second PTY — drop it.
+		sm.mu.Unlock()
+		sm.logInfo("new_session_ignored_creating", "session_id", sessionID)
+		return
+	}
+	sm.creating[sessionID] = struct{}{}
+	sm.mu.Unlock()
+	sm.create(ctx, sessionID, token, name, configJSON, systemPrompt, seedPrompt, cols, rows)
+}
+
+func (sm *SessionManager) clearCreating(sessionID string) {
+	sm.mu.Lock()
+	delete(sm.creating, sessionID)
+	sm.mu.Unlock()
+}
+
+// Reattach answers the relay's reconnect_session: re-bind a session lane to a
+// PTY this process is already running. It NEVER bootstraps or spawns a PTY —
+// that is what new_session is for.
+//
+// It reports whether this process has the session. false means the session is
+// gone from here (this is a restarted `retask sandbox connect`, or the PTY has
+// exited), and the caller must tell the relay so, rather than letting a stale
+// session id quietly acquire a brand-new PTY.
+//
+// A session still inside create() counts as present: its own lane dial is
+// already on the way, so reporting it gone would tell the viewer a session that
+// is merely still starting has died.
+//
+// The frame carries no token, and none is needed: a session-lane token is
+// minted once, at new_session, and this process stored it then. We re-dial with
+// our own copy — the relay holds the matching one for the life of the session,
+// across its own restarts.
+func (sm *SessionManager) Reattach(ctx context.Context, sessionID string, cols, rows int) bool {
+	sm.mu.Lock()
+	entry := sm.sessions[sessionID]
+	_, creating := sm.creating[sessionID]
+	sm.mu.Unlock()
+
+	if entry == nil {
+		return creating
+	}
+	token, _, _ := entry.reconnectParams()
+	sm.attach(ctx, entry, sessionID, token, cols, rows)
+	return true
+}
+
+// attach re-binds a fresh session-lane to an already-running runner. It never
+// bootstraps or spawns a new PTY. The token is the long-lived session-lane
+// token carried by the new_session / reconnect_session frame.
+func (sm *SessionManager) attach(ctx context.Context, entry *sessionEntry, sessionID, token string, cols, rows int) {
+	// Record the freshest token/geometry so a later CLI-driven re-dial uses them.
+	entry.setReconnectParams(token, cols, rows)
+	wsConn, err := sm.dial(ctx, sm.sessionLaneURL(sessionID, token))
+	if err != nil {
+		sm.logError("session_reattach_error", "session_id", sessionID, "error", err)
+		return
+	}
+	sm.logInfo("session_lane_reattached", "sandbox_id", sm.sandboxID, "session_id", sessionID)
+	if !sm.bindReattach(ctx, entry, sessionID, wsConn, cols, rows) {
+		wsConn.CloseNow() //nolint:errcheck
+	}
+}
+
+// bindReattach flushes buffered output to wsConn, adopts it as the session
+// lane, and starts a read pump — the shared tail of both the relay-driven
+// attach and the CLI reconnect loop. It returns false (and leaves wsConn for the
+// caller to close) if the entry was reaped or the buffer flush failed.
+func (sm *SessionManager) bindReattach(ctx context.Context, entry *sessionEntry, sessionID string, wsConn *websocket.Conn, cols, rows int) bool {
+	old, ok, err := entry.reattach(wsConn)
+	if err != nil {
+		// The fresh conn couldn't take the buffered backlog; caller retries.
+		sm.logError("session_reattach_flush_failed", "session_id", sessionID, "error", err)
+		return false
+	}
+	if !ok {
+		// The entry was reaped (its PTY exited). Do not bind onto a dead runner;
+		// the client will reconnect and get a fresh session via create.
+		sm.logInfo("session_reattach_reaped", "session_id", sessionID)
+		return false
+	}
+	if old != nil {
+		old.CloseNow() //nolint:errcheck
+	}
+	if cols > 0 && rows > 0 {
+		entry.runner.Resize(rows, cols) //nolint:errcheck
+	}
+	go sm.readPump(ctx, entry, sessionID, wsConn)
+	return true
+}
+
+// create bootstraps a brand-new session: connects a session lane, runs
+// bootstrap, launches a new PTY, and bridges it. Called only when session_id is
+// not already tracked.
+func (sm *SessionManager) create(ctx context.Context, sessionID, token, name string, configJSON json.RawMessage, systemPrompt, seedPrompt string, cols, rows int) {
+	defer sm.clearCreating(sessionID)
 	if name == "" {
 		name = sessionID
 	}
@@ -133,9 +273,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}
 
 	// Connect session lane first so bootstrap can stream logs to the FE.
-	wsURL := fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
-		sm.wsBase, sm.sandboxID, sessionID, token)
-	wsConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	wsConn, err := sm.dial(ctx, sm.sessionLaneURL(sessionID, token))
 	if err != nil {
 		sm.logError("session_lane_error", "session_id", sessionID, "error", err)
 		return
@@ -145,6 +283,14 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	// Record before bootstrap: setupFolder creates the folder early but Run can
 	// fail later, and an unlogged folder can never be reaped.
 	sm.recordSessionStart(sessionID, name, time.Now())
+
+	// pending latches window sizes that arrive before the PTY exists: the
+	// initial geometry reported in the new_session frame, or a resize that
+	// races bootstrap. It is flushed once the PTY is up.
+	pending := &pendingSize{}
+	if cols > 0 && rows > 0 {
+		pending.store(rows, cols)
+	}
 
 	// Run bootstrap — writes files, clones repos, builds env.
 	sb := &SessionBootstrap{
@@ -159,6 +305,7 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		Endpoint:     sm.endpoint,
 		BaseDir:      sm.baseDir,
 		Log:          sm.log,
+		Pending:      pending,
 	}
 	sessionDir, env, err := sb.Run(ctx, wsConn)
 	if err != nil {
@@ -176,6 +323,12 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 
 	agCfg := sm.agentCfg
 	agCfg.Env = env
+	// Start the PTY at the browser's real geometry when the client reported
+	// one, so the session never renders at a default the user cannot see.
+	if cols > 0 && rows > 0 {
+		agCfg.PTYCols = cols
+		agCfg.PTYRows = rows
+	}
 
 	sm.logInfo("session_starting", "session_id", sessionID, "name", name, "init_command", initCommand)
 	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", shellCmd}, agCfg)
@@ -189,27 +342,51 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 		return
 	}
 
+	// The runner's output is a PERMANENT sessionWriter, set once here and never
+	// re-pointed: it sends to the current session-lane while attached and buffers
+	// (drop-oldest, up to sessionBufBytes) while detached, flushing the backlog on
+	// re-attach. It starts already attached to this conn. Set output BEFORE
+	// publishing the entry so a concurrent attach can never find the entry before
+	// its output exists.
+	writer := newSessionWriter(ctx, wsConn, sm.sessionBufBytes)
+	entry := newSessionEntry(r, writer, wsConn, token, cols, rows)
+	r.SetOutput(writer)
 	sm.mu.Lock()
-	sm.sessions[sessionID] = r
+	sm.sessions[sessionID] = entry
 	sm.mu.Unlock()
 
-	r.SetOutput(&wsWriter{ctx: ctx, conn: wsConn})
+	// Apply any geometry latched before the PTY existed (from the new_session
+	// frame or a resize during bootstrap). Must run after SetOutput and before
+	// the read pump starts, so a buffered resize can only refine the geometry.
+	if pRows, pCols, ok := pending.take(); ok {
+		if err := applyResize(r, pRows, pCols, 20, 50*time.Millisecond); err != nil {
+			pending.store(pRows, pCols)
+			sm.logError("session_initial_resize_failed", "session_id", sessionID, "error", err)
+		} else {
+			sm.logInfo("session_initial_resize", "session_id", sessionID, "rows", pRows, "cols", pCols)
+		}
+	}
+
 	if sm.autoRespond {
-		// Watch the session's rendered screen (via the emulator) for known
-		// startup prompts (e.g. Claude Code's folder-trust dialog) and inject
-		// the accept keystroke once, so unattended sessions don't stall waiting
-		// for a human. Stops once every rule has fired or the watch window ends.
+		// Auto-accept known startup prompts (e.g. the agent's folder-trust
+		// dialog) so unattended sessions don't stall; stops once every rule has
+		// fired or the watch window ends.
 		go newPromptWatcher(r.Lines, r.StdinWriter(), defaultPromptRules(), defaultPollInterval, defaultPromptWindow, sm.log).Run(ctx)
 	}
-	go func() {
-		err := sm.readLoop(ctx, wsConn, r, sessionID)
-		sm.logInfo("session_lane_closed", "session_id", sessionID, "error", err)
-		r.Stop() //nolint:errcheck
-	}()
 
+	// Read pump: bridge the session-lane socket to the PTY stdin. A socket
+	// error detaches (see readPump) rather than stopping the agent.
+	go sm.readPump(ctx, entry, sessionID, wsConn)
+
+	// PTY-exit watcher: reaps the entry (so a racing re-attach is refused),
+	// closes whichever socket is currently attached, and removes the session.
 	go func() {
 		<-r.Done()
-		wsConn.Close(websocket.StatusNormalClosure, "session ended") //nolint:errcheck
+		// Mark reaped + take the current conn atomically, so a re-attach racing
+		// this delete gets ok=false from reattach instead of binding a dead runner.
+		if c := entry.reap(); c != nil {
+			c.Close(websocket.StatusNormalClosure, "session ended") //nolint:errcheck
+		}
 		sm.mu.Lock()
 		delete(sm.sessions, sessionID)
 		sm.mu.Unlock()
@@ -218,7 +395,81 @@ func (sm *SessionManager) Start(ctx context.Context, sessionID, token, name stri
 	}()
 }
 
-func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner, sessionID string) error {
+// readPump bridges the session-lane socket to the runner's stdin until the
+// socket errors. A socket error means the viewer/relay went away — the PTY is
+// left RUNNING (detached) and re-bound on the next new_session. The runner is
+// NEVER stopped here; only an explicit Stop/Remove ends it (teardown contract).
+func (sm *SessionManager) readPump(ctx context.Context, entry *sessionEntry, sessionID string, conn *websocket.Conn) {
+	// Release this session-lane's socket FD when the pump exits. coder/websocket
+	// does not close the socket on a read error, and the read uses the long-lived
+	// process ctx (no deadline), so without this an ungraceful drop (1006, RST,
+	// DO recycle) would hold the FD until GC. CloseNow is idempotent, so a
+	// concurrent attach/Done-watcher close is safe.
+	defer conn.CloseNow() //nolint:errcheck
+	err := sm.readLoop(ctx, conn, entry, sessionID)
+	sm.logInfo("session_lane_detached", "session_id", sessionID, "error", err)
+	// Detach + switch the writer to buffering atomically under the entry lock, so
+	// this never clobbers the output a concurrent re-attach installed. The PTY
+	// keeps running either way. detachIfCurrent returns false for a stale conn
+	// (a newer conn is already live) — only the current conn's drop starts a
+	// reconnect, so we never spin up a redundant loop.
+	if entry.detachIfCurrent(conn, entry.writer.detach) {
+		sm.startReconnect(ctx, entry, sessionID)
+	}
+}
+
+// startReconnect launches the single CLI-driven reconnect loop for a session
+// whose lane just dropped. beginReconnect guarantees at most one loop, and none
+// once the entry is reaped.
+func (sm *SessionManager) startReconnect(ctx context.Context, entry *sessionEntry, sessionID string) {
+	if !entry.beginReconnect() {
+		return
+	}
+	go sm.reconnectLoop(ctx, entry, sessionID)
+}
+
+// reconnectLoop re-establishes a dropped session lane with the same long-lived
+// token, using the shared exponential backoff. On success the buffered output
+// flushes and live streaming resumes; the runner is never touched. It exits when
+// the session is reaped/stopped, another path (a relay new_session) re-attached
+// first, or the process context is cancelled.
+func (sm *SessionManager) reconnectLoop(ctx context.Context, entry *sessionEntry, sessionID string) {
+	defer entry.endReconnect()
+	backoff := sm.reconnectInitial
+	for {
+		if entry.isReaped() || entry.currentConn() != nil || ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if entry.isReaped() || entry.currentConn() != nil {
+			return
+		}
+		token, cols, rows := entry.reconnectParams()
+		wsConn, err := sm.dial(ctx, sm.sessionLaneURL(sessionID, token))
+		if err != nil {
+			sm.logWarn("session_lane_reconnect_error", "session_id", sessionID, "error", err, "retrying_in", backoff.String())
+			backoff = min(backoff*2, sm.reconnectMax)
+			continue
+		}
+		if sm.bindReattach(ctx, entry, sessionID, wsConn, cols, rows) {
+			sm.logInfo("session_lane_reconnected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
+			return
+		}
+		// Reaped → give up; flush error → discard the conn and retry with backoff.
+		wsConn.CloseNow() //nolint:errcheck
+		if entry.isReaped() {
+			return
+		}
+		backoff = min(backoff*2, sm.reconnectMax)
+	}
+}
+
+func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, entry *sessionEntry, sessionID string) error {
+	r := entry.runner
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
@@ -242,19 +493,35 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			r.StdinWriter().Write(b) //nolint:errcheck
 		case "resize":
 			sm.logInfo("session_resize", "session_id", sessionID, "rows", msg.Rows, "cols", msg.Cols)
-			r.Resize(msg.Rows, msg.Cols) //nolint:errcheck
+			// Values <= 0 are ignored; values above maxPTYDimension are
+			// clamped down to it rather than ignored (see clampDimension).
+			if msg.Rows > 0 && msg.Cols > 0 {
+				rows, cols := clampDimension(msg.Rows), clampDimension(msg.Cols)
+				if err := applyResize(r, rows, cols, 5, 50*time.Millisecond); err != nil {
+					sm.logError("session_resize_failed", "session_id", sessionID, "error", err)
+				}
+				// Record the size the browser is actually showing now, not just
+				// the live PTY. Without this, the NEXT reattach — the CLI's own
+				// reconnectLoop self-healing a dropped lane, or a relay-driven
+				// Reattach — replays whatever geometry this entry was last
+				// (re)dialed at (session start, or the last reattach) and
+				// silently resizes the PTY back down to it in bindReattach,
+				// even though nothing about the browser's window changed. See
+				// bindReattach's `entry.runner.Resize(rows, cols)`.
+				entry.updateSize(cols, rows)
+			}
 		}
 	}
 }
 
-// Stop sends SIGTERM to the session's PTY process.
+// Stop sends SIGTERM to the session's PTY process (keeps the folder).
 func (sm *SessionManager) Stop(sessionID string) {
 	sm.logInfo("session_stopping", "session_id", sessionID)
 	sm.mu.Lock()
-	r := sm.sessions[sessionID]
+	entry := sm.sessions[sessionID]
 	sm.mu.Unlock()
-	if r != nil {
-		r.Stop() //nolint:errcheck
+	if entry != nil {
+		entry.runner.Stop() //nolint:errcheck
 	}
 }
 
@@ -264,12 +531,12 @@ func (sm *SessionManager) Stop(sessionID string) {
 func (sm *SessionManager) Remove(sessionID string) {
 	sm.logInfo("session_removing", "session_id", sessionID)
 	sm.mu.Lock()
-	r := sm.sessions[sessionID]
+	entry := sm.sessions[sessionID]
 	delete(sm.sessions, sessionID)
 	sm.mu.Unlock()
 
-	if r != nil {
-		drain(r, sessionDrainTimeout)
+	if entry != nil {
+		drain(entry.runner, sessionDrainTimeout)
 		sm.fleet.Remove(sessionID)
 	}
 	if err := os.RemoveAll(filepath.Join(sm.baseDir, "session-"+sessionID)); err != nil {
@@ -292,19 +559,19 @@ func (sm *SessionManager) RemoveAll() {
 	sm.logInfo("sandbox_removing", "sandbox_id", sm.sandboxID)
 
 	sm.mu.Lock()
-	runners := make(map[string]*agentfleet.Runner, len(sm.sessions))
-	for id, r := range sm.sessions {
-		runners[id] = r
+	entries := make(map[string]*sessionEntry, len(sm.sessions))
+	for id, entry := range sm.sessions {
+		entries[id] = entry
 	}
-	sm.sessions = make(map[string]*agentfleet.Runner)
+	sm.sessions = make(map[string]*sessionEntry)
 	sm.mu.Unlock()
 
 	var wg sync.WaitGroup
-	for id, r := range runners {
+	for id, entry := range entries {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			drain(r, sessionDrainTimeout)
+			drain(entry.runner, sessionDrainTimeout)
 			if sm.fleet != nil {
 				sm.fleet.Remove(id)
 			}
@@ -318,11 +585,11 @@ func (sm *SessionManager) RemoveAll() {
 	// Delete every folder the log knows about — including sessions from earlier
 	// runs of this sandbox that are no longer live. Folders with no entry are
 	// not ours to touch.
-	entries, err := sm.sessionLog.entries()
+	logEntries, err := sm.sessionLog.entries()
 	if err != nil {
 		sm.logError("session_log_read_failed", "sandbox_id", sm.sandboxID, "error", err)
 	}
-	for id, e := range entries {
+	for id, e := range logEntries {
 		if rmErr := os.RemoveAll(filepath.Join(sm.baseDir, e.Dir)); rmErr != nil {
 			sm.logError("session_dir_remove_failed", "session_id", id, "error", rmErr)
 		}
@@ -357,19 +624,8 @@ func (sm *SessionManager) logError(msg string, args ...any) {
 	}
 }
 
-// wsWriter implements io.Writer, encoding bytes as base64 JSON to the session-lane WebSocket.
-type wsWriter struct {
-	ctx  context.Context
-	conn *websocket.Conn
-}
-
-func (w *wsWriter) Write(p []byte) (int, error) {
-	msg, _ := json.Marshal(struct {
-		Type string `json:"type"`
-		Data string `json:"data"`
-	}{"data", base64.StdEncoding.EncodeToString(p)})
-	if err := w.conn.Write(w.ctx, websocket.MessageText, msg); err != nil {
-		return 0, err
+func (sm *SessionManager) logWarn(msg string, args ...any) {
+	if sm.log != nil {
+		sm.log.Warn(msg, args...)
 	}
-	return len(p), nil
 }

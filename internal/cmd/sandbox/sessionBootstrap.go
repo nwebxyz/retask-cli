@@ -62,6 +62,10 @@ type SessionBootstrap struct {
 	Endpoint     string
 	BaseDir      string // directory where `retask sandbox connect` was invoked
 	Log          *slog.Logger
+
+	// Pending receives window sizes that arrive during bootstrap, before the
+	// PTY exists. Applied by the caller once the PTY is up.
+	Pending *pendingSize
 }
 
 // deriveTargetDir returns the default clone directory name for a repo URL —
@@ -129,9 +133,85 @@ var hostEnvDenylist = map[string]bool{
 	"NWEB_WORKSPACE_ID": true,
 }
 
+// hostTerminalEnvDenylist are variables that identify the terminal emulator
+// the OPERATOR is sitting in when they run `retask sandbox connect`. A
+// session's terminal is the browser's xterm.js on the other end of the
+// session lane — never the operator's — so every one of these is a false
+// statement about the session, and agents act on them.
+//
+// Claude Code is the worked example. Told it is in iTerm2 or Terminal.app
+// (TERM_PROGRAM), it starts a 200ms poll whose only purpose is to notice the
+// Cmd+K those emulators handle themselves and never forward: it asks for the
+// cursor position and reads "row 1" as "the user wiped the screen", then
+// submits /clear — discarding the conversation, not the display. A browser
+// terminal never swallows Cmd+K, so the detector has nothing true to detect;
+// it only has our scrollback replay, which parks the cursor at row 1 every
+// time a viewer reconnects.
+var hostTerminalEnvDenylist = map[string]bool{
+	// Terminal program identity (what Claude Code's detector keys on).
+	"TERM_PROGRAM":         true,
+	"TERM_PROGRAM_VERSION": true,
+	"__CFBundleIdentifier": true,
+	"TERMINAL_EMULATOR":    true,
+	"LC_TERMINAL":          true,
+	"LC_TERMINAL_VERSION":  true,
+	// Per-emulator session handles: stale ids pointing at the operator's window.
+	"TERM_SESSION_ID":        true,
+	"ITERM_SESSION_ID":       true,
+	"ITERM_PROFILE":          true,
+	"KITTY_WINDOW_ID":        true,
+	"KITTY_PID":              true,
+	"KITTY_LISTEN_ON":        true,
+	"GHOSTTY_RESOURCES_DIR":  true,
+	"GHOSTTY_BIN_DIR":        true,
+	"ALACRITTY_LOG":          true,
+	"ALACRITTY_SOCKET":       true,
+	"ALACRITTY_WINDOW_ID":    true,
+	"WEZTERM_PANE":           true,
+	"WEZTERM_UNIX_SOCKET":    true,
+	"WEZTERM_EXECUTABLE":     true,
+	"KONSOLE_VERSION":        true,
+	"KONSOLE_DBUS_SERVICE":   true,
+	"KONSOLE_DBUS_SESSION":   true,
+	"GNOME_TERMINAL_SERVICE": true,
+	"GNOME_TERMINAL_SCREEN":  true,
+	"VTE_VERSION":            true,
+	"TERMINATOR_UUID":        true,
+	"TILIX_ID":               true,
+	"XTERM_VERSION":          true,
+	"WT_SESSION":             true,
+	"WT_PROFILE_ID":          true,
+	"ZED_TERM":               true,
+	// Multiplexers the operator may be inside; the session is not.
+	"TMUX":                true,
+	"TMUX_PANE":           true,
+	"STY":                 true,
+	"ZELLIJ":              true,
+	"ZELLIJ_SESSION_NAME": true,
+	"ZELLIJ_PANE_ID":      true,
+	// Editor-embedded terminals.
+	"CURSOR_TRACE_ID":               true,
+	"VSCODE_GIT_ASKPASS_MAIN":       true,
+	"VSCODE_GIT_ASKPASS_NODE":       true,
+	"VSCODE_GIT_ASKPASS_EXTRA_ARGS": true,
+	"VSCODE_GIT_IPC_HANDLE":         true,
+	// Palette hints measured from the operator's window.
+	"COLORFGBG": true,
+}
+
+// sessionTerminalEnv is the truthful replacement for the stripped identity:
+// the session's terminal really is xterm.js, which reports itself as
+// xterm-256color and renders 24-bit color. Applied in the host layer, so a
+// deliberate Sandbox Config value still overrides it.
+var sessionTerminalEnv = map[string]string{
+	"TERM":      "xterm-256color",
+	"COLORTERM": "truecolor",
+}
+
 // buildEnv merges three layers into a process environment slice.
 // Later layers override earlier ones:
-//  1. baseEnv  — host machine env (os.Environ()), minus hostEnvDenylist
+//  1. baseEnv  — host machine env (os.Environ()), minus hostEnvDenylist and
+//     hostTerminalEnvDenylist, plus sessionTerminalEnv
 //  2. config   — user-configured env vars from Sandbox_Config
 //  3. injected — standard session vars that always override
 func buildEnv(baseEnv []string, config *sandboxv1.Sandbox_Config, injected map[string]string) []string {
@@ -141,6 +221,12 @@ func buildEnv(baseEnv []string, config *sandboxv1.Sandbox_Config, injected map[s
 		if hostEnvDenylist[k] {
 			continue // never inherit operator auth/workspace vars from the host
 		}
+		if hostTerminalEnvDenylist[k] {
+			continue // the operator's terminal is not the session's terminal
+		}
+		env[k] = v
+	}
+	for k, v := range sessionTerminalEnv {
 		env[k] = v
 	}
 	for _, ev := range config.GetEnvVars() {
@@ -192,11 +278,18 @@ func writeTerm(ctx context.Context, conn *websocket.Conn, text string) {
 // readChoice reads keyboard input from the session lane and returns the user's
 // choice (1/2/3). Keystrokes are echoed back to the terminal. Returns 2
 // (continue) on any read error so a disconnected client does not block forever.
-func readChoice(ctx context.Context, conn *websocket.Conn) int {
+// pending may be nil; when non-nil, resize frames arriving on this socket
+// during bootstrap are latched into it instead of being discarded.
+func readChoice(ctx context.Context, conn *websocket.Conn, pending *pendingSize) int {
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
 			return 2
+		}
+		// Resize frames share this socket and would otherwise be dropped
+		// while the failure menu is open.
+		if recordResizeFrame(raw, pending) {
+			continue
 		}
 		var msg struct {
 			Type string `json:"type"`
@@ -250,7 +343,7 @@ func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessi
 			}
 			writeTerm(ctx, conn, fmt.Sprintf("\r\n[retask] Git repo setup failed: %v\r\n", err))
 			writeTerm(ctx, conn, "\r\n  1) Retry\r\n  2) Continue (skip repos)\r\n  3) Exit\r\n\r\nSelection [2]: ")
-			choice := readChoice(ctx, conn)
+			choice := readChoice(ctx, conn, b.Pending)
 			if choice == 3 {
 				return "", nil, ErrAborted
 			}

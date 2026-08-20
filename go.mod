@@ -1,12 +1,12 @@
 module github.com/nwebxyz/retask-cli
 
-go 1.26.4
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/coder/websocket v1.8.14
-	github.com/hoaitan/agentfleet v0.7.0
+	github.com/hoaitan/agentfleet v0.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.43.0
