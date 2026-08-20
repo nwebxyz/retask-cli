@@ -25,7 +25,7 @@ func TestSessionLogRecordAndLoad(t *testing.T) {
 	assert.True(t, now.Equal(entries["sess-a"].CreatedAt))
 
 	// The file is named after the sandbox, next to the session folders.
-	_, err = os.Stat(filepath.Join(dir, "sb-1.json"))
+	_, err = os.Stat(filepath.Join(dir, "sandbox_sb-1.json"))
 	assert.NoError(t, err)
 }
 
@@ -104,7 +104,7 @@ func TestSessionLogAtomicWriteLeavesNoTemp(t *testing.T) {
 	names, err := filepath.Glob(filepath.Join(dir, "*"))
 	require.NoError(t, err)
 	require.Len(t, names, 1)
-	assert.Equal(t, "sb-1.json", filepath.Base(names[0]))
+	assert.Equal(t, "sandbox_sb-1.json", filepath.Base(names[0]))
 }
 
 func TestSessionLogDestroyDeletesFileAndLatches(t *testing.T) {
@@ -113,12 +113,12 @@ func TestSessionLogDestroyDeletesFileAndLatches(t *testing.T) {
 	require.NoError(t, l.record("sess-a", "A", "session-sess-a", time.Now().UTC()))
 
 	require.NoError(t, l.destroy())
-	_, err := os.Stat(filepath.Join(dir, "sb-1.json"))
+	_, err := os.Stat(filepath.Join(dir, "sandbox_sb-1.json"))
 	assert.True(t, os.IsNotExist(err), "destroy must delete the log file")
 
 	// A sweep or a late session start must not resurrect the file.
 	require.NoError(t, l.record("sess-b", "B", "session-sess-b", time.Now().UTC()))
-	_, err = os.Stat(filepath.Join(dir, "sb-1.json"))
+	_, err = os.Stat(filepath.Join(dir, "sandbox_sb-1.json"))
 	assert.True(t, os.IsNotExist(err), "a closed log must not be recreated")
 }
 
@@ -240,6 +240,6 @@ func TestSweepOnClosedLogIsNoop(t *testing.T) {
 	deleted, err := l.sweep(dir, now, 30*24*time.Hour, nil, false)
 	require.NoError(t, err)
 	assert.Empty(t, deleted, "a closed log must not be swept or recreated")
-	_, err = os.Stat(filepath.Join(dir, "sb-1.json"))
+	_, err = os.Stat(filepath.Join(dir, "sandbox_sb-1.json"))
 	assert.True(t, os.IsNotExist(err))
 }

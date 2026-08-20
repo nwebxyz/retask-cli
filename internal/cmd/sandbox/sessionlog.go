@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// sessionLogVersion is the schema version written to <sandbox_id>.json.
+// sessionLogVersion is the schema version written to sandbox_<sandbox_id>.json.
 const sessionLogVersion = 1
 
 // errNewerLog reports a log written by a newer CLI. Such files are skipped
@@ -26,14 +26,14 @@ type sessionLogEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// sessionLogData is the on-disk shape of <sandbox_id>.json.
+// sessionLogData is the on-disk shape of sandbox_<sandbox_id>.json.
 type sessionLogData struct {
 	Version   int                        `json:"version"`
 	SandboxID string                     `json:"sandbox_id"`
 	Sessions  map[string]sessionLogEntry `json:"sessions"`
 }
 
-// sessionLog owns <baseDir>/<sandboxID>.json. It records when each session
+// sessionLog owns <baseDir>/sandbox_<sandboxID>.json. It records when each session
 // started so folders can be reaped by age. It is the only source of truth for
 // what may be deleted: a session-* folder with no entry is never touched.
 //
@@ -50,7 +50,7 @@ type sessionLog struct {
 
 // sessionLogPath returns the log path for a sandbox in baseDir.
 func sessionLogPath(baseDir, sandboxID string) string {
-	return filepath.Join(baseDir, sandboxID+".json")
+	return filepath.Join(baseDir, "sandbox_"+sandboxID+".json")
 }
 
 func newSessionLog(baseDir, sandboxID string) *sessionLog {

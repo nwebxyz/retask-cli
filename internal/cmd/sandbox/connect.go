@@ -62,7 +62,7 @@ This is a long-running command that maintains a persistent WebSocket connection
 to sandbox-proxy and manages sessions as local PTY processes.
 
 Session folders are created in the current directory and recorded in
-<sandbox-id>.json. Stopping a session, the sandbox, or this command leaves them
+sandbox_<sandbox-id>.json. Stopping a session, the sandbox, or this command leaves them
 on disk; --retention deletes the ones older than its window, checked hourly.
 
 Usage example:

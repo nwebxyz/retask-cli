@@ -27,7 +27,7 @@ func newCleanupCommand(gf *flags.Global) *cobra.Command {
 		Short: "Delete old session folders in the current directory",
 		Long: `Delete session folders left behind by stopped or disconnected sessions.
 
-Only folders recorded in a <sandbox-id>.json session log are considered; any
+Only folders recorded in a sandbox_<sandbox-id>.json session log are considered; any
 other directory is left alone. With no argument, every session log in the
 current directory is swept.
 
