@@ -145,3 +145,17 @@ func (e *sessionEntry) reconnectParams() (token string, cols, rows int) {
 	defer e.mu.Unlock()
 	return e.token, e.cols, e.rows
 }
+
+// updateSize records the session's current geometry from a live resize frame
+// on an already-attached lane — as opposed to setReconnectParams, which only
+// runs when the lane itself is (re)dialed. Without this, a live resize moves
+// the PTY but not this entry's notion of its size, so the NEXT reattach (the
+// CLI's own reconnectLoop self-healing a dropped lane, or a relay-driven
+// Reattach) replays whatever geometry was current at the last dial and
+// silently resizes the PTY back down to it, even though the browser's window
+// never changed. Called only with values already validated positive.
+func (e *sessionEntry) updateSize(cols, rows int) {
+	e.mu.Lock()
+	e.cols, e.rows = cols, rows
+	e.mu.Unlock()
+}
