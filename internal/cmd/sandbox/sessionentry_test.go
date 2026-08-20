@@ -150,3 +150,50 @@ func TestSessionEntry_ReconnectParams(t *testing.T) {
 		t.Fatalf("params = %q/%d/%d, want fresh/120/40", tok, cols, rows)
 	}
 }
+
+// A live resize (updateSize, called from readLoop on an already-attached
+// lane) must be what a later reattach sees — not the geometry the lane was
+// last (re)dialed at. Before updateSize existed, a resize moved the live PTY
+// but never touched reconnectParams, so the NEXT reattach (the CLI's own
+// reconnectLoop, or a relay-driven Reattach) replayed the stale dial-time
+// size into bindReattach's `entry.runner.Resize(rows, cols)` and silently
+// shrank the PTY back down, even though the browser's window never changed.
+func TestSessionEntry_UpdateSize_SurvivesIntoReconnectParams(t *testing.T) {
+	e := newTestEntry(new(websocket.Conn))
+	e.setReconnectParams("tok", 80, 24) // size at session start
+
+	e.updateSize(150, 45) // browser resized while the lane was live
+
+	tok, cols, rows := e.reconnectParams()
+	if tok != "tok" || cols != 150 || rows != 45 {
+		t.Fatalf("params = %q/%d/%d, want tok/150/45 (the live size, not the stale 80/24 from session start)", tok, cols, rows)
+	}
+}
+
+// A later re-dial (setReconnectParams, e.g. a relay-driven Reattach carrying
+// its own geometry) must still be able to override updateSize's value — the
+// freshest source wins either way, updateSize is not sticky.
+func TestSessionEntry_UpdateSize_ThenSetReconnectParams(t *testing.T) {
+	e := newTestEntry(new(websocket.Conn))
+	e.setReconnectParams("tok", 80, 24)
+	e.updateSize(150, 45)
+	e.setReconnectParams("tok2", 200, 60)
+
+	tok, cols, rows := e.reconnectParams()
+	if tok != "tok2" || cols != 200 || rows != 60 {
+		t.Fatalf("params = %q/%d/%d, want tok2/200/60", tok, cols, rows)
+	}
+}
+
+// updateSize must not rotate the session-lane token — only setReconnectParams
+// does that, on an actual re-dial.
+func TestSessionEntry_UpdateSize_LeavesTokenAlone(t *testing.T) {
+	e := newTestEntry(new(websocket.Conn))
+	e.setReconnectParams("tok", 80, 24)
+	e.updateSize(150, 45)
+
+	tok, _, _ := e.reconnectParams()
+	if tok != "tok" {
+		t.Fatalf("token = %q, want unchanged %q", tok, "tok")
+	}
+}

@@ -347,7 +347,7 @@ func (sm *SessionManager) readPump(ctx context.Context, entry *sessionEntry, ses
 	// DO recycle) would hold the FD until GC. CloseNow is idempotent, so a
 	// concurrent attach/Done-watcher close is safe.
 	defer conn.CloseNow() //nolint:errcheck
-	err := sm.readLoop(ctx, conn, entry.runner, sessionID)
+	err := sm.readLoop(ctx, conn, entry, sessionID)
 	sm.logInfo("session_lane_detached", "session_id", sessionID, "error", err)
 	// Detach + switch the writer to buffering atomically under the entry lock, so
 	// this never clobbers the output a concurrent re-attach installed. The PTY
@@ -409,7 +409,8 @@ func (sm *SessionManager) reconnectLoop(ctx context.Context, entry *sessionEntry
 	}
 }
 
-func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r *agentfleet.Runner, sessionID string) error {
+func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, entry *sessionEntry, sessionID string) error {
+	r := entry.runner
 	for {
 		_, raw, err := conn.Read(ctx)
 		if err != nil {
@@ -436,9 +437,19 @@ func (sm *SessionManager) readLoop(ctx context.Context, conn *websocket.Conn, r 
 			// Values <= 0 are ignored; values above maxPTYDimension are
 			// clamped down to it rather than ignored (see clampDimension).
 			if msg.Rows > 0 && msg.Cols > 0 {
-				if err := applyResize(r, clampDimension(msg.Rows), clampDimension(msg.Cols), 5, 50*time.Millisecond); err != nil {
+				rows, cols := clampDimension(msg.Rows), clampDimension(msg.Cols)
+				if err := applyResize(r, rows, cols, 5, 50*time.Millisecond); err != nil {
 					sm.logError("session_resize_failed", "session_id", sessionID, "error", err)
 				}
+				// Record the size the browser is actually showing now, not just
+				// the live PTY. Without this, the NEXT reattach — the CLI's own
+				// reconnectLoop self-healing a dropped lane, or a relay-driven
+				// Reattach — replays whatever geometry this entry was last
+				// (re)dialed at (session start, or the last reattach) and
+				// silently resizes the PTY back down to it in bindReattach,
+				// even though nothing about the browser's window changed. See
+				// bindReattach's `entry.runner.Resize(rows, cols)`.
+				entry.updateSize(cols, rows)
 			}
 		}
 	}
