@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -121,6 +122,19 @@ func TestAutoUpgradeOnceSurvivesUpgradeError(t *testing.T) {
 		onUpgraded:        func() { t.Fatal("must not restart when the upgrade itself failed") },
 	}
 	assert.NotPanics(t, c.once)
+}
+
+// --- restartArgv ---
+
+func TestRestartArgvPreservesOriginalArgsAndEnv(t *testing.T) {
+	path, argv, env, err := restartArgv()
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, path, "must resolve the running binary's path")
+	require.Len(t, argv, len(os.Args), "argv must be argv0 + the original args, nothing more or less")
+	assert.Equal(t, path, argv[0], "argv0 must be the resolved binary path, not os.Args[0]")
+	assert.Equal(t, os.Args[1:], argv[1:], "restart must replay the exact arguments this process was started with, e.g. --profile")
+	assert.Equal(t, os.Environ(), env)
 }
 
 // --- SessionManager.HasActiveSessions ---

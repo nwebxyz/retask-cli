@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -125,25 +124,18 @@ func (c *autoUpgradeChecker) logWarn(msg string, args ...any) {
 	}
 }
 
-// restartSelf re-executes the current binary with the same arguments and
-// environment it was originally started with — including any flags a caller
-// appended later, like --profile — so a hot-applied upgrade takes effect. It
-// hands stdio to the child and exits the current process once the child has
-// started. os/exec rather than syscall.Exec so this works unmodified on
-// Windows too.
-func restartSelf() error {
-	execPath, err := os.Executable()
+// restartArgv builds what restartSelf needs to hand off to the just-upgraded
+// binary: its resolved path, followed by the exact arguments this process was
+// started with (so any flag a caller appended later, like --profile, survives
+// the restart untouched), and the current environment. It is split out from
+// restartSelf so the argv/env construction can be unit-tested independent of
+// the platform-specific restart mechanism (execve on Unix, spawn+exit on
+// Windows — see restart_unix.go / restart_windows.go).
+func restartArgv() (path string, argv []string, env []string, err error) {
+	path, err = os.Executable()
 	if err != nil {
-		return fmt.Errorf("auto-upgrade: locate running binary: %w", err)
+		return "", nil, nil, fmt.Errorf("auto-upgrade: locate running binary: %w", err)
 	}
-	cmd := exec.Command(execPath, os.Args[1:]...) //nolint:gosec
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("auto-upgrade: restart: %w", err)
-	}
-	os.Exit(0)
-	return nil // unreached
+	argv = append([]string{path}, os.Args[1:]...)
+	return path, argv, os.Environ(), nil
 }
