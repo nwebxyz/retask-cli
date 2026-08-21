@@ -35,6 +35,7 @@ func NewCommand(gf *flags.Global) *cobra.Command {
 		newSessionCommand(gf),
 		newConnectCommand(gf),
 		newAttachCommand(gf),
+		newCleanupCommand(gf),
 	)
 	return cmd
 }

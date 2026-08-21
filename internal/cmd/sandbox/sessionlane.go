@@ -18,6 +18,36 @@ import (
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 )
 
+// sessionDrainTimeout bounds how long teardown waits for a session's PTY to
+// exit after SIGTERM before deleting its folder anyway.
+const sessionDrainTimeout = 5 * time.Second
+
+// stoppableRunner is the slice of *agentfleet.Runner that teardown needs, so
+// drain can be tested without a real PTY.
+type stoppableRunner interface {
+	Stop() error
+	Done() <-chan struct{}
+}
+
+// drain sends SIGTERM and waits for the process to actually exit, up to
+// timeout. agentfleet's Stop returns as soon as the signal is delivered, not
+// when the process has exited — so deleting a session folder straight after it
+// races the agent's own shutdown, destroying the working directory while the
+// agent is still flushing into it. SIGTERM exists to grant that grace period.
+//
+// A process that ignores SIGTERM is never escalated to SIGKILL by agentfleet,
+// so the timeout is the only backstop against a hung session blocking teardown.
+func drain(r stoppableRunner, timeout time.Duration) {
+	if r == nil {
+		return
+	}
+	r.Stop() //nolint:errcheck
+	select {
+	case <-r.Done():
+	case <-time.After(timeout):
+	}
+}
+
 // wsDialer dials a WebSocket URL. It is a field on SessionManager so tests can
 // inject a fake in place of the real network dial.
 type wsDialer func(ctx context.Context, url string) (*websocket.Conn, error)
@@ -41,7 +71,8 @@ type SessionManager struct {
 	sandboxName string
 	baseDir     string
 	endpoint    string
-	autoRespond bool // auto-accept known agent prompts (e.g. folder-trust)
+	sessionLog  *sessionLog // records session start times for retention
+	autoRespond bool        // auto-accept known agent prompts (e.g. folder-trust)
 
 	// sessionBufBytes is the per-session outbound buffer retained across a
 	// session-lane drop (drop-oldest). 0 disables buffering.
@@ -64,20 +95,22 @@ func newSessionManager(
 	agentCfg agentfleet.AgentConfig,
 	log *slog.Logger,
 	workspaceID, sandboxName, baseDir, endpoint string,
+	sessLog *sessionLog,
 	autoRespond bool,
 	sessionBufBytes int,
 ) *SessionManager {
 	return &SessionManager{
-		sandboxID:       sandboxID,
-		wsBase:          wsBase,
-		fleet:           fleet,
-		fleetCfg:        fleetCfg,
-		agentCfg:        agentCfg,
-		log:             log,
-		workspaceID:     workspaceID,
-		sandboxName:     sandboxName,
-		baseDir:         baseDir,
-		endpoint:        endpoint,
+		sandboxID:        sandboxID,
+		wsBase:           wsBase,
+		fleet:            fleet,
+		fleetCfg:         fleetCfg,
+		agentCfg:         agentCfg,
+		log:              log,
+		workspaceID:      workspaceID,
+		sandboxName:      sandboxName,
+		baseDir:          baseDir,
+		endpoint:         endpoint,
+		sessionLog:       sessLog,
 		autoRespond:      autoRespond,
 		sessionBufBytes:  sessionBufBytes,
 		dial:             defaultWSDial,
@@ -92,6 +125,28 @@ func newSessionManager(
 func (sm *SessionManager) sessionLaneURL(sessionID, token string) string {
 	return fmt.Sprintf("%s/ws/session-lane?sandbox_id=%s&session_id=%s&token=%s",
 		sm.wsBase, sm.sandboxID, sessionID, token)
+}
+
+// recordSessionStart logs when a session started, before bootstrap runs.
+// Bootstrap creates the folder early but can fail afterwards; under the
+// log-only retention policy a folder with no entry could never be reaped, so
+// the entry must exist as soon as the folder can.
+func (sm *SessionManager) recordSessionStart(sessionID, name string, at time.Time) {
+	if sm.sessionLog == nil {
+		return
+	}
+	if err := sm.sessionLog.record(sessionID, name, "session-"+sessionID, at); err != nil {
+		sm.logError("session_log_record_failed", "session_id", sessionID, "error", err)
+	}
+}
+
+// isActive reports whether a session currently has a live runner. The retention
+// sweeper uses it so a long-running session is never reaped.
+func (sm *SessionManager) isActive(sessionID string) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	_, ok := sm.sessions[sessionID]
+	return ok
 }
 
 // Start handles a new_session event. It is IDEMPOTENT: if session_id already
@@ -224,6 +279,10 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 		return
 	}
 	sm.logInfo("session_lane_connected", "sandbox_id", sm.sandboxID, "session_id", sessionID)
+
+	// Record before bootstrap: setupFolder creates the folder early but Run can
+	// fail later, and an unlogged folder can never be reaped.
+	sm.recordSessionStart(sessionID, name, time.Now())
 
 	// pending latches window sizes that arrive before the PTY exists: the
 	// initial geometry reported in the new_session frame, or a resize that
@@ -466,19 +525,78 @@ func (sm *SessionManager) Stop(sessionID string) {
 	}
 }
 
-// Remove stops the session's PTY, drops it from the fleet, and deletes its
-// folder. Used for delete_session.
+// Remove tears down one session for delete_session: stop the PTY, wait for it
+// to exit, then delete its working folder and log entry. An explicit delete
+// reclaims disk immediately rather than waiting for the retention window.
 func (sm *SessionManager) Remove(sessionID string) {
 	sm.logInfo("session_removing", "session_id", sessionID)
 	sm.mu.Lock()
 	entry := sm.sessions[sessionID]
 	delete(sm.sessions, sessionID)
 	sm.mu.Unlock()
+
 	if entry != nil {
-		entry.runner.Stop() //nolint:errcheck
+		drain(entry.runner, sessionDrainTimeout)
 		sm.fleet.Remove(sessionID)
 	}
-	os.RemoveAll(filepath.Join(sm.baseDir, "session-"+sessionID)) //nolint:errcheck
+	if err := os.RemoveAll(filepath.Join(sm.baseDir, "session-"+sessionID)); err != nil {
+		sm.logError("session_dir_remove_failed", "session_id", sessionID, "error", err)
+	}
+	if sm.sessionLog != nil {
+		if err := sm.sessionLog.remove(sessionID); err != nil {
+			sm.logError("session_log_remove_failed", "session_id", sessionID, "error", err)
+		}
+	}
+}
+
+// RemoveAll tears everything down for a deleted sandbox: stop and drain every
+// live session, delete every folder the log knows about, then delete the log
+// file itself. Used for delete_sandbox, after which the CLI exits.
+//
+// Sessions drain concurrently, so teardown costs one drain timeout rather than
+// one per session.
+func (sm *SessionManager) RemoveAll() {
+	sm.logInfo("sandbox_removing", "sandbox_id", sm.sandboxID)
+
+	sm.mu.Lock()
+	entries := make(map[string]*sessionEntry, len(sm.sessions))
+	for id, entry := range sm.sessions {
+		entries[id] = entry
+	}
+	sm.sessions = make(map[string]*sessionEntry)
+	sm.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for id, entry := range entries {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			drain(entry.runner, sessionDrainTimeout)
+			if sm.fleet != nil {
+				sm.fleet.Remove(id)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if sm.sessionLog == nil {
+		return
+	}
+	// Delete every folder the log knows about — including sessions from earlier
+	// runs of this sandbox that are no longer live. Folders with no entry are
+	// not ours to touch.
+	logEntries, err := sm.sessionLog.entries()
+	if err != nil {
+		sm.logError("session_log_read_failed", "sandbox_id", sm.sandboxID, "error", err)
+	}
+	for id, e := range logEntries {
+		if rmErr := os.RemoveAll(filepath.Join(sm.baseDir, e.Dir)); rmErr != nil {
+			sm.logError("session_dir_remove_failed", "session_id", id, "error", rmErr)
+		}
+	}
+	if err := sm.sessionLog.destroy(); err != nil {
+		sm.logError("session_log_destroy_failed", "sandbox_id", sm.sandboxID, "error", err)
+	}
 }
 
 // StopAll stops every active session.

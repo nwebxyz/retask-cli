@@ -225,7 +225,7 @@ func (dl *DataLane) connectOnce(ctx context.Context) (established bool, err erro
 
 		case "delete_sandbox":
 			dl.logInfo("delete_sandbox", "sandbox_id", msg.SandboxID)
-			dl.sessions.StopAll()
+			dl.sessions.RemoveAll()
 			conn.Close(websocket.StatusNormalClosure, "deleted") //nolint:errcheck
 			return established, errSandboxDeleted
 		}
