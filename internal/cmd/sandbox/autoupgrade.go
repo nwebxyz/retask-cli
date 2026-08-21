@@ -13,21 +13,28 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/cmd/upgrade"
 )
 
-// autoUpgradeCheckInterval is how often connect checks for a newer release
-// once it is up and running. The initial check happens separately, as an
-// explicit first step before the sandbox connection is established.
-const autoUpgradeCheckInterval = time.Hour
-
-// parseAutoUpgrade parses the --auto-upgrade flag, which accepts "on" or "off".
-func parseAutoUpgrade(s string) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "on":
-		return true, nil
-	case "off":
-		return false, nil
-	default:
-		return false, fmt.Errorf(`invalid --auto-upgrade %q: must be "on" or "off"`, s)
+// parseAutoUpgrade parses the --auto-upgrade flag, which additionally accepts
+// "off" on top of the plain duration syntax parseDuration already handles —
+// the same shape as --retention. The duration doubles as the recurring check
+// interval once connect is running; the initial check is a separate explicit
+// first step run before any interval has elapsed.
+//
+// Zero is rejected: elsewhere in this command a bare "0" means "act
+// immediately" (--older-than 0 wipes everything right now), which would be a
+// confusing reading of an interval that instead ends up meaning "check
+// continuously". Disabling is spelled "off".
+func parseAutoUpgrade(s string) (interval time.Duration, enabled bool, err error) {
+	if strings.EqualFold(strings.TrimSpace(s), "off") {
+		return 0, false, nil
 	}
+	d, err := parseDuration(s)
+	if err != nil {
+		return 0, false, err
+	}
+	if d == 0 {
+		return 0, false, fmt.Errorf(`invalid --auto-upgrade %q: use "off" to disable auto-upgrade`, s)
+	}
+	return d, true, nil
 }
 
 // autoUpgradeChecker periodically checks for a newer retask release while
@@ -49,9 +56,9 @@ type autoUpgradeChecker struct {
 	onUpgraded func()
 }
 
-func newAutoUpgradeChecker(hasActiveSessions func() bool, logger *slog.Logger, onUpgraded func()) *autoUpgradeChecker {
+func newAutoUpgradeChecker(interval time.Duration, hasActiveSessions func() bool, logger *slog.Logger, onUpgraded func()) *autoUpgradeChecker {
 	return &autoUpgradeChecker{
-		interval:          autoUpgradeCheckInterval,
+		interval:          interval,
 		hasActiveSessions: hasActiveSessions,
 		logger:            logger,
 		checkLatest:       upgrade.CheckLatestVersion,

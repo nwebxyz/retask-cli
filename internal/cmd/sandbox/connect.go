@@ -80,12 +80,13 @@ session lane reconnect on their own with exponential backoff. While a session
 lane is down, its output is buffered (drop-oldest) and flushed to the proxy on
 reconnect, so the viewer keeps the most recent output across the gap.
 
-With --auto-upgrade on (the default), connect runs "retask upgrade" as its
-first step, before it does anything else. It then checks hourly for a newer
-release: if one is found and no session is currently active, it upgrades and
-restarts itself with the same arguments it was originally started with; if a
-session is active, it waits and checks again next time. A failed check (e.g.
-no network) is logged and never blocks connect from continuing to run.
+With --auto-upgrade 1h (the default), connect runs "retask upgrade" as its
+first step, before it does anything else. It then re-checks on that interval
+for a newer release: if one is found and no session is currently active, it
+upgrades and restarts itself with the same arguments it was originally
+started with; if a session is active, it waits and checks again next time.
+A failed check (e.g. no network) is logged and never blocks connect from
+continuing to run. --auto-upgrade off disables this entirely.
 
 Every log line goes to two places: the TUI log panel (stderr in headless mode)
 and retask.log in the current folder. The log file rotates Unix-style — the live
@@ -99,8 +100,9 @@ Flags:
   --retention string  Delete session folders older than this, checked hourly. Values: 30d, 12h, off (default: 30d)
   --session-buffer    Per-session output retained across a session-lane drop, flushed on
                       reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
-  --auto-upgrade string  Check for and apply a newer retask release before connecting and
-                      hourly while running. Values: on, off (default: on)
+  --auto-upgrade string  Check for and apply a newer retask release before connecting, then
+                      again on this interval while running (e.g. 1h, 30m, 1d); "off"
+                      disables it (default: 1h)
   --log-file string   Log file written alongside the TUI/stderr output, relative to the
                       current folder (default: retask.log)
   --no-log-file       Do not write a log file; log to the TUI/stderr only (default: false)
@@ -129,7 +131,7 @@ Environment:
 			if err != nil {
 				return err
 			}
-			autoUpgradeOn, err := parseAutoUpgrade(autoUpgrade)
+			autoUpgradeInterval, autoUpgradeOn, err := parseAutoUpgrade(autoUpgrade)
 			if err != nil {
 				return err
 			}
@@ -288,7 +290,7 @@ Environment:
 			// a Ctrl-C, then re-execs into the new version on the way out.
 			var restartRequested atomic.Bool
 			if autoUpgradeOn {
-				checker := newAutoUpgradeChecker(sm.HasActiveSessions, logger, func() {
+				checker := newAutoUpgradeChecker(autoUpgradeInterval, sm.HasActiveSessions, logger, func() {
 					restartRequested.Store(true)
 					stop()
 				})
@@ -335,7 +337,7 @@ Environment:
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
 	cmd.Flags().StringVar(&retention, "retention", "30d", `Delete session folders older than this (e.g. 30d, 12h); "off" disables`)
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
-	cmd.Flags().StringVar(&autoUpgrade, "auto-upgrade", "on", "Check for and apply a newer retask release before connecting and hourly while running: on, off")
+	cmd.Flags().StringVar(&autoUpgrade, "auto-upgrade", "1h", `Check for and apply a newer retask release before connecting, then on this interval while running (e.g. 1h, 30m, 1d); "off" disables it`)
 	logFlags.register(cmd)
 	return cmd
 }

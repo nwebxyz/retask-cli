@@ -3,6 +3,7 @@ package sandbox
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,30 +14,49 @@ import (
 func TestParseAutoUpgrade(t *testing.T) {
 	tests := []struct {
 		in   string
-		want bool
+		want time.Duration
 	}{
-		{"on", true}, {"ON", true}, {" on ", true},
-		{"off", false}, {"OFF", false}, {" off ", false},
+		{"1h", time.Hour},
+		{"30m", 30 * time.Minute},
+		{"1d", 24 * time.Hour},
+		{" 2h ", 2 * time.Hour},
 	}
 	for _, tc := range tests {
-		got, err := parseAutoUpgrade(tc.in)
+		got, enabled, err := parseAutoUpgrade(tc.in)
 		require.NoError(t, err, "in=%q", tc.in)
+		assert.True(t, enabled, "in=%q", tc.in)
 		assert.Equal(t, tc.want, got, "in=%q", tc.in)
+	}
+
+	for _, in := range []string{"off", "OFF", " off "} {
+		_, enabled, err := parseAutoUpgrade(in)
+		require.NoError(t, err, "in=%q", in)
+		assert.False(t, enabled, "in=%q should disable auto-upgrade", in)
 	}
 }
 
 func TestParseAutoUpgradeRejectsUnknown(t *testing.T) {
-	for _, in := range []string{"", "true", "false", "1", "yes"} {
-		_, err := parseAutoUpgrade(in)
+	for _, in := range []string{"", "true", "false", "on", "1", "yes"} {
+		_, _, err := parseAutoUpgrade(in)
 		assert.Error(t, err, "in=%q should be rejected", in)
 	}
+}
+
+func TestParseAutoUpgradeRejectsZero(t *testing.T) {
+	// 0 already means "act immediately" for --older-than; allowing it here
+	// too would make an interval mean "check continuously". Disabling is
+	// spelled "off".
+	_, _, err := parseAutoUpgrade("0")
+	assert.Error(t, err)
+	_, _, err = parseAutoUpgrade("0h")
+	assert.Error(t, err)
 }
 
 func TestConnectAutoUpgradeFlagDefault(t *testing.T) {
 	cmd := newConnectCommand(&flags.Global{})
 	f := cmd.Flags().Lookup("auto-upgrade")
 	require.NotNil(t, f, "--auto-upgrade must be registered")
-	assert.Equal(t, "on", f.DefValue, "auto-upgrade defaults to on")
+	assert.Equal(t, "1h", f.DefValue, "auto-upgrade defaults to an hourly check")
 }
 
 // --- autoUpgradeChecker.once() ---
