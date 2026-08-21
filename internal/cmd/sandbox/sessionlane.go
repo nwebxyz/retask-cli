@@ -149,6 +149,18 @@ func (sm *SessionManager) isActive(sessionID string) bool {
 	return ok
 }
 
+// ActiveCount returns the number of sessions with a live runner plus any
+// still mid-bootstrap (in sm.creating but not yet in sm.sessions — e.g.
+// cloning a repo). The auto-upgrade sweeper uses it to defer restarting
+// while sessions are active or starting; a session briefly counted in both
+// maps during create()'s final steps only makes the count more conservative,
+// never less.
+func (sm *SessionManager) ActiveCount() int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return len(sm.sessions) + len(sm.creating)
+}
+
 // Start handles a new_session event. It is IDEMPOTENT: if session_id already
 // has a live runner (the relay lost its state, or the VM data-lane reconnected
 // and the relay re-sent new_session), re-bind a fresh session-lane to the

@@ -54,6 +54,20 @@ func TestIsActiveTracksLiveSessions(t *testing.T) {
 	assert.False(t, sm.isActive("sess-a"), "unknown session is not active")
 }
 
+func TestActiveCountReflectsLiveSessions(t *testing.T) {
+	sm := newTestSessionManager(t, t.TempDir())
+	assert.Equal(t, 0, sm.ActiveCount(), "no sessions started yet")
+
+	sm.sessions["sess-a"] = &sessionEntry{}
+	assert.Equal(t, 1, sm.ActiveCount())
+
+	sm.sessions["sess-b"] = &sessionEntry{}
+	assert.Equal(t, 2, sm.ActiveCount())
+
+	delete(sm.sessions, "sess-a")
+	assert.Equal(t, 1, sm.ActiveCount(), "removed session must no longer be counted")
+}
+
 // --- drain ---
 
 // fakeRunner implements stoppableRunner with a controllable exit, so drain

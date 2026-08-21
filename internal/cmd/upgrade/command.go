@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	update "github.com/inconshreveable/go-update"
 	"github.com/spf13/cobra"
@@ -23,6 +24,13 @@ import (
 )
 
 const githubAPI = "https://api.github.com/repos/nwebxyz/retask-cli/releases/latest"
+
+// releaseCheckClient bounds the release-metadata lookup only. Run is called
+// as the first step of every "retask sandbox connect" invocation, before any
+// signal handling is installed, so an unreachable or slow GitHub must not
+// hang the whole command indefinitely. The (large, genuinely slow-varying)
+// binary download further down is left unbounded, as before.
+var releaseCheckClient = &http.Client{Timeout: 10 * time.Second}
 
 type githubRelease struct {
 	TagName string        `json:"tag_name"`
@@ -39,6 +47,7 @@ type progressReader struct {
 	total int64
 	read  int64
 	name  string
+	w     io.Writer
 	isTTY bool
 }
 
@@ -48,10 +57,10 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	if p.isTTY {
 		if p.total > 0 {
 			pct := p.read * 100 / p.total
-			fmt.Fprintf(os.Stderr, "\rDownloading %s... %s / %s (%d%%)",
+			fmt.Fprintf(p.w, "\rDownloading %s... %s / %s (%d%%)",
 				p.name, formatBytes(p.read), formatBytes(p.total), pct)
 		} else {
-			fmt.Fprintf(os.Stderr, "\rDownloading %s... %s", p.name, formatBytes(p.read))
+			fmt.Fprintf(p.w, "\rDownloading %s... %s", p.name, formatBytes(p.read))
 		}
 	}
 	return n, err
@@ -70,8 +79,15 @@ func formatBytes(b int64) string {
 	}
 }
 
-func stderrIsTTY() bool {
-	fi, err := os.Stderr.Stat()
+// isTerminal reports whether w is a real terminal, so the progress bar only
+// renders its carriage-return animation when something will actually show
+// it — not into a log file or a discarded writer.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
 	if err != nil {
 		return false
 	}
@@ -92,54 +108,81 @@ Usage example:
 Requires write permission to the directory containing the retask binary.
 If permission is denied, retry with sudo.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run()
+			upgraded, _, err := Run(os.Stdout)
+			if err != nil {
+				return err
+			}
+			if !upgraded {
+				fmt.Printf("retask v%s is already up to date\n", version.Version)
+			}
+			return nil
 		},
 	}
 }
 
-func run() error {
+// LatestVersion returns the latest published release version, without the
+// "v" prefix. It makes no changes on disk — callers that only need to know
+// whether an upgrade is available (without necessarily applying it) use this
+// instead of Run.
+func LatestVersion() (latest string, err error) {
+	rel, err := fetchLatestRelease()
+	if err != nil {
+		return "", fmt.Errorf("upgrade: failed to fetch latest release: %w", err)
+	}
+	return strings.TrimPrefix(rel.TagName, "v"), nil
+}
+
+// Run fetches the latest release from GitHub and, if newer than the running
+// binary, downloads, verifies, and applies it in place. upgraded reports
+// whether a new binary was applied; newVersion is only set when upgraded is
+// true. Run never prints an "already up to date" message — callers that care
+// about that case check the returned upgraded value themselves.
+//
+// w receives the same human-readable progress and status text this function
+// has always printed. Pass io.Discard when a caller renders its own UI (such
+// as sandbox connect's TUI) and raw terminal writes would corrupt it.
+func Run(w io.Writer) (upgraded bool, newVersion string, err error) {
 	if version.Version == "dev" {
-		return fmt.Errorf("upgrade: cannot upgrade a dev build")
+		return false, "", fmt.Errorf("upgrade: cannot upgrade a dev build")
 	}
 
 	rel, err := fetchLatestRelease()
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to fetch latest release: %w", err)
+		return false, "", fmt.Errorf("upgrade: failed to fetch latest release: %w", err)
 	}
 
 	latest := strings.TrimPrefix(rel.TagName, "v")
 
 	if latest == version.Version {
-		fmt.Printf("retask v%s is already up to date\n", version.Version)
-		return nil
+		return false, "", nil
 	}
 
-	fmt.Printf("retask v%s → v%s\n", version.Version, latest)
+	fmt.Fprintf(w, "retask v%s → v%s\n", version.Version, latest)
 
 	asset := assetName(latest, runtime.GOOS, runtime.GOARCH)
 	assetURL, checksumURL := findAssetURLs(rel.Assets, asset)
 	if assetURL == "" {
-		return fmt.Errorf("upgrade: no release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
+		return false, "", fmt.Errorf("upgrade: no release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
 	checksumData, err := downloadRaw(checksumURL)
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to download checksums: %w", err)
+		return false, "", fmt.Errorf("upgrade: failed to download checksums: %w", err)
 	}
 
 	expectedChecksum, err := parseChecksum(checksumData, asset)
 	if err != nil {
-		return fmt.Errorf("upgrade: %w", err)
+		return false, "", fmt.Errorf("upgrade: %w", err)
 	}
 
-	data, err := downloadWithProgress(assetURL, asset)
+	data, err := downloadWithProgress(w, assetURL, asset)
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to download: %w", err)
+		return false, "", fmt.Errorf("upgrade: failed to download: %w", err)
 	}
 
 	sum := sha256.Sum256(data)
 	if !bytes.Equal(sum[:], expectedChecksum) {
-		return fmt.Errorf("upgrade: checksum verification failed")
+		return false, "", fmt.Errorf("upgrade: checksum verification failed")
 	}
 
 	var binary []byte
@@ -149,18 +192,18 @@ func run() error {
 		binary, err = extractFromTarGz(data)
 	}
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to extract binary: %w", err)
+		return false, "", fmt.Errorf("upgrade: failed to extract binary: %w", err)
 	}
 
 	if err := update.Apply(bytes.NewReader(binary), update.Options{}); err != nil {
 		if strings.Contains(err.Error(), "permission denied") {
-			return fmt.Errorf("upgrade: %s (try running with sudo)", err)
+			return false, "", fmt.Errorf("upgrade: %s (try running with sudo)", err)
 		}
-		return fmt.Errorf("upgrade: %w", err)
+		return false, "", fmt.Errorf("upgrade: %w", err)
 	}
 
-	fmt.Printf("Upgraded to v%s\n", latest)
-	return nil
+	fmt.Fprintf(w, "Upgraded to v%s\n", latest)
+	return true, latest, nil
 }
 
 func fetchLatestRelease() (*githubRelease, error) {
@@ -171,7 +214,7 @@ func fetchLatestRelease() (*githubRelease, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "retask-cli/"+version.Version)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := releaseCheckClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -209,23 +252,24 @@ func downloadRaw(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func downloadWithProgress(url, name string) ([]byte, error) {
+func downloadWithProgress(w io.Writer, url, name string) ([]byte, error) {
 	resp, err := http.Get(url) //nolint:noctx
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	tty := stderrIsTTY()
+	tty := isTerminal(w)
 	pr := &progressReader{
 		r:     resp.Body,
 		total: resp.ContentLength,
 		name:  name,
+		w:     w,
 		isTTY: tty,
 	}
 	data, err := io.ReadAll(pr)
 	if tty {
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(w)
 	}
 	return data, err
 }

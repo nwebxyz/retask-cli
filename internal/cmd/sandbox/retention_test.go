@@ -108,3 +108,10 @@ func TestConnectRetentionFlagDefault(t *testing.T) {
 	require.NotNil(t, f, "--retention must be registered")
 	assert.Equal(t, "30d", f.DefValue, "retention defaults to 30 days")
 }
+
+func TestConnectNoAutoUpgradeFlagDefault(t *testing.T) {
+	cmd := newConnectCommand(&flags.Global{})
+	f := cmd.Flags().Lookup("no-auto-upgrade")
+	require.NotNil(t, f, "--no-auto-upgrade must be registered")
+	assert.Equal(t, "false", f.DefValue, "auto-upgrade must be on by default")
+}

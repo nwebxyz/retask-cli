@@ -20,6 +20,7 @@ import (
 
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/cmd/upgrade"
 	"github.com/nwebxyz/retask-cli/internal/config"
 	"github.com/nwebxyz/retask-cli/internal/flags"
 	"github.com/nwebxyz/retask-cli/internal/version"
@@ -50,6 +51,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
 	var autoOpen bool
 	var noAutoRespond bool
+	var noAutoUpgrade bool
 	var retention string
 	var sessionBuffer string
 	var logFlags logFileFlags
@@ -65,12 +67,18 @@ Session folders are created in the current directory and recorded in
 sandbox_<sandbox-id>.json. Stopping a session, the sandbox, or this command leaves them
 on disk; --retention deletes the ones older than its window, checked hourly.
 
+Unless disabled, this command runs "retask upgrade" as its first step, then
+checks hourly for a newer release. A newer release found while sessions are
+active is deferred; once none are active, it is applied and this command
+restarts itself in place with the same arguments.
+
 Usage example:
   retask sandbox connect sandbox_abc123
   retask sandbox connect sandbox_abc123 --mode headless
   retask sandbox connect sandbox_abc123 --auto-open
   retask sandbox connect sandbox_abc123 --retention 7d
   retask sandbox connect sandbox_abc123 --retention off
+  retask sandbox connect sandbox_abc123 --no-auto-upgrade
 
 A dropped connection never tears down a running agent: the agent PTY is stopped
 only by an explicit stop/delete. Both lanes self-heal — the data lane and the
@@ -87,6 +95,7 @@ Flags:
   --mode string       Running mode: auto, tui, headless (default: auto)
   --auto-open         Auto-open a terminal tab for each new session (default: false)
   --no-auto-respond   Disable auto-accepting known agent startup prompts (default: false)
+  --no-auto-upgrade   Disable running "retask upgrade" before connecting and hourly while idle (default: false)
   --retention string  Delete session folders older than this, checked hourly. Values: 30d, 12h, off (default: 30d)
   --session-buffer    Per-session output retained across a session-lane drop, flushed on
                       reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
@@ -103,6 +112,7 @@ Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
   RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag
   RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag
+  RETASK_SANDBOX_NO_AUTO_UPGRADE=1    Disable automatic self-upgrade without the flag
   RETASK_SANDBOX_SESSION_BUFFER       Session output buffer size (overridden by --session-buffer)
   RETASK_SANDBOX_LOG_FILE             Log file path (overridden by --log-file)
   RETASK_SANDBOX_NO_LOG_FILE=1        Disable the log file without the flag
@@ -119,6 +129,25 @@ Environment:
 				return err
 			}
 			sandboxID := args[0]
+
+			autoUpgrade := !(noAutoUpgrade || os.Getenv("RETASK_SANDBOX_NO_AUTO_UPGRADE") == "1")
+
+			// First step: upgrade in place if a newer release exists, then
+			// restart into it before doing anything else. version.Version ==
+			// "dev" means an unreleased local build, which upgrade.Run
+			// rejects outright — skip silently rather than warn on every run.
+			if autoUpgrade && version.Version != "dev" {
+				if upgraded, newVersion, err := upgrade.Run(os.Stdout); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: auto-upgrade check failed: %v\n", err)
+				} else if upgraded {
+					fmt.Printf("Restarting to pick up v%s...\n", newVersion)
+					if err := respawn(); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: upgraded but failed to restart automatically: %v (restart retask sandbox connect manually to use the new version)\n", err)
+					} else {
+						return nil
+					}
+				}
+			}
 
 			// Resolve credentials.
 			path := gf.ConfigPath
@@ -251,6 +280,29 @@ Environment:
 				go sweeper.Run(ctx)
 			}
 
+			// version.Version == "dev" is guarded here too: the first-step
+			// check above only runs once, but this sweeper would otherwise
+			// keep finding "a newer release" every hour for the life of the
+			// process and logging a failure each time.
+			if autoUpgrade && version.Version != "dev" {
+				upSweeper := &autoUpgradeSweeper{
+					currentVersion: version.Version,
+					latest:         upgrade.LatestVersion,
+					// io.Discard: this can run while the TUI owns the
+					// terminal (raw/alt-screen mode), so Run's own progress
+					// output must not hit stdout/stderr directly. The
+					// logger-driven auto_upgrade_applied line below is the
+					// TUI-safe record of the same event.
+					upgrade:     func() (bool, string, error) { return upgrade.Run(io.Discard) },
+					respawn:     respawn,
+					activeCount: sm.ActiveCount,
+					interval:    autoUpgradeCheckInterval,
+					logger:      logger,
+					stop:        stop,
+				}
+				go upSweeper.Run(ctx)
+			}
+
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
 			// A deleted sandbox ends the data lane for good; there is nothing
@@ -286,6 +338,7 @@ Environment:
 	cmd.Flags().StringVar(&mode, "mode", "auto", "Running mode: auto, tui, headless")
 	cmd.Flags().BoolVar(&autoOpen, "auto-open", false, "Auto-open a terminal tab for each new session")
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
+	cmd.Flags().BoolVar(&noAutoUpgrade, "no-auto-upgrade", false, `Disable running "retask upgrade" before connecting and hourly while idle`)
 	cmd.Flags().StringVar(&retention, "retention", "30d", `Delete session folders older than this (e.g. 30d, 12h); "off" disables`)
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
 	logFlags.register(cmd)
