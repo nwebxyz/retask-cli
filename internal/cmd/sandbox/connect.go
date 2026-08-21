@@ -101,8 +101,8 @@ Flags:
   --session-buffer    Per-session output retained across a session-lane drop, flushed on
                       reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
   --auto-upgrade string  Check for and apply a newer retask release before connecting, then
-                      again on this interval while running (e.g. 1h, 30m, 1d); "off"
-                      disables it (default: 1h)
+                      again on this interval while running (e.g. 1h, 30m, 1d); minimum
+                      1m; "off" disables it (default: 1h)
   --log-file string   Log file written alongside the TUI/stderr output, relative to the
                       current folder (default: retask.log)
   --no-log-file       Do not write a log file; log to the TUI/stderr only (default: false)
@@ -337,7 +337,7 @@ Environment:
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
 	cmd.Flags().StringVar(&retention, "retention", "30d", `Delete session folders older than this (e.g. 30d, 12h); "off" disables`)
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
-	cmd.Flags().StringVar(&autoUpgrade, "auto-upgrade", "1h", `Check for and apply a newer retask release before connecting, then on this interval while running (e.g. 1h, 30m, 1d); "off" disables it`)
+	cmd.Flags().StringVar(&autoUpgrade, "auto-upgrade", "1h", `Check for and apply a newer retask release before connecting, then on this interval while running (e.g. 1h, 30m, 1d; minimum 1m); "off" disables it`)
 	logFlags.register(cmd)
 	return cmd
 }

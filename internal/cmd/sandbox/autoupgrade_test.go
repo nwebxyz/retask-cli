@@ -16,6 +16,7 @@ func TestParseAutoUpgrade(t *testing.T) {
 		in   string
 		want time.Duration
 	}{
+		{"1m", time.Minute}, // the floor
 		{"1h", time.Hour},
 		{"30m", 30 * time.Minute},
 		{"1d", 24 * time.Hour},
@@ -42,14 +43,14 @@ func TestParseAutoUpgradeRejectsUnknown(t *testing.T) {
 	}
 }
 
-func TestParseAutoUpgradeRejectsZero(t *testing.T) {
-	// 0 already means "act immediately" for --older-than; allowing it here
-	// too would make an interval mean "check continuously". Disabling is
-	// spelled "off".
-	_, _, err := parseAutoUpgrade("0")
-	assert.Error(t, err)
-	_, _, err = parseAutoUpgrade("0h")
-	assert.Error(t, err)
+func TestParseAutoUpgradeRejectsBelowMinimum(t *testing.T) {
+	// 0 already means "act immediately" for --older-than; allowing it (or
+	// anything under the 1m floor) here too would make a small interval mean
+	// "check continuously". Disabling is spelled "off".
+	for _, in := range []string{"0", "0h", "1s", "30s", "59s", "999ms"} {
+		_, _, err := parseAutoUpgrade(in)
+		assert.ErrorContains(t, err, "minimum check interval is 1m", "in=%q", in)
+	}
 }
 
 func TestConnectAutoUpgradeFlagDefault(t *testing.T) {
