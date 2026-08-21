@@ -149,6 +149,15 @@ func (sm *SessionManager) isActive(sessionID string) bool {
 	return ok
 }
 
+// HasActiveSessions reports whether any session currently has a live runner.
+// The auto-upgrade checker uses it to defer replacing the binary while an
+// agent is running, instead of pulling the rug out from under it.
+func (sm *SessionManager) HasActiveSessions() bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return len(sm.sessions) > 0
+}
+
 // Start handles a new_session event. It is IDEMPOTENT: if session_id already
 // has a live runner (the relay lost its state, or the VM data-lane reconnected
 // and the relay re-sent new_session), re-bind a fresh session-lane to the

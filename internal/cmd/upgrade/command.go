@@ -22,7 +22,8 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/version"
 )
 
-const githubAPI = "https://api.github.com/repos/nwebxyz/retask-cli/releases/latest"
+// githubAPI is a var, not a const, so tests can point it at a fake server.
+var githubAPI = "https://api.github.com/repos/nwebxyz/retask-cli/releases/latest"
 
 type githubRelease struct {
 	TagName string        `json:"tag_name"`
@@ -92,26 +93,44 @@ Usage example:
 Requires write permission to the directory containing the retask binary.
 If permission is denied, retry with sudo.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run()
+			_, err := Run()
+			return err
 		},
 	}
 }
 
-func run() error {
+// CheckLatestVersion reports the latest published release version and whether
+// the running binary is already on it. It only hits the GitHub API — no
+// download or apply — so callers can poll cheaply (e.g. an hourly
+// auto-upgrade check) before committing to a full Run.
+func CheckLatestVersion() (latest string, upToDate bool, err error) {
+	rel, err := fetchLatestRelease()
+	if err != nil {
+		return "", false, err
+	}
+	latest = strings.TrimPrefix(rel.TagName, "v")
+	return latest, latest == version.Version, nil
+}
+
+// Run fetches the latest release and, if it is newer than the running
+// binary, downloads and applies it in place. didUpgrade reports whether a new
+// binary was applied, so callers that need the new code to take effect (e.g.
+// re-executing the process) know whether a restart is actually warranted.
+func Run() (didUpgrade bool, err error) {
 	if version.Version == "dev" {
-		return fmt.Errorf("upgrade: cannot upgrade a dev build")
+		return false, fmt.Errorf("upgrade: cannot upgrade a dev build")
 	}
 
 	rel, err := fetchLatestRelease()
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to fetch latest release: %w", err)
+		return false, fmt.Errorf("upgrade: failed to fetch latest release: %w", err)
 	}
 
 	latest := strings.TrimPrefix(rel.TagName, "v")
 
 	if latest == version.Version {
 		fmt.Printf("retask v%s is already up to date\n", version.Version)
-		return nil
+		return false, nil
 	}
 
 	fmt.Printf("retask v%s → v%s\n", version.Version, latest)
@@ -119,27 +138,27 @@ func run() error {
 	asset := assetName(latest, runtime.GOOS, runtime.GOARCH)
 	assetURL, checksumURL := findAssetURLs(rel.Assets, asset)
 	if assetURL == "" {
-		return fmt.Errorf("upgrade: no release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
+		return false, fmt.Errorf("upgrade: no release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
 	checksumData, err := downloadRaw(checksumURL)
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to download checksums: %w", err)
+		return false, fmt.Errorf("upgrade: failed to download checksums: %w", err)
 	}
 
 	expectedChecksum, err := parseChecksum(checksumData, asset)
 	if err != nil {
-		return fmt.Errorf("upgrade: %w", err)
+		return false, fmt.Errorf("upgrade: %w", err)
 	}
 
 	data, err := downloadWithProgress(assetURL, asset)
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to download: %w", err)
+		return false, fmt.Errorf("upgrade: failed to download: %w", err)
 	}
 
 	sum := sha256.Sum256(data)
 	if !bytes.Equal(sum[:], expectedChecksum) {
-		return fmt.Errorf("upgrade: checksum verification failed")
+		return false, fmt.Errorf("upgrade: checksum verification failed")
 	}
 
 	var binary []byte
@@ -149,18 +168,18 @@ func run() error {
 		binary, err = extractFromTarGz(data)
 	}
 	if err != nil {
-		return fmt.Errorf("upgrade: failed to extract binary: %w", err)
+		return false, fmt.Errorf("upgrade: failed to extract binary: %w", err)
 	}
 
 	if err := update.Apply(bytes.NewReader(binary), update.Options{}); err != nil {
 		if strings.Contains(err.Error(), "permission denied") {
-			return fmt.Errorf("upgrade: %s (try running with sudo)", err)
+			return false, fmt.Errorf("upgrade: %s (try running with sudo)", err)
 		}
-		return fmt.Errorf("upgrade: %w", err)
+		return false, fmt.Errorf("upgrade: %w", err)
 	}
 
 	fmt.Printf("Upgraded to v%s\n", latest)
-	return nil
+	return true, nil
 }
 
 func fetchLatestRelease() (*githubRelease, error) {
