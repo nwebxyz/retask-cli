@@ -12,16 +12,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 )
-
-// ErrAborted is returned by SessionBootstrap.Run when the user chooses Exit
-// from the failure menu. The caller must close the session lane without
-// starting a PTY.
-var ErrAborted = errors.New("session aborted by user")
 
 const bannerArt = `
                               #####
@@ -62,10 +58,6 @@ type SessionBootstrap struct {
 	Endpoint     string
 	BaseDir      string // directory where `retask sandbox connect` was invoked
 	Log          *slog.Logger
-
-	// Pending receives window sizes that arrive during bootstrap, before the
-	// PTY exists. Applied by the caller once the PTY is up.
-	Pending *pendingSize
 }
 
 // deriveTargetDir returns the default clone directory name for a repo URL —
@@ -249,24 +241,9 @@ func buildEnv(baseEnv []string, config *sandboxv1.Sandbox_Config, injected map[s
 	return result
 }
 
-// parseChoiceFrom returns the first valid menu choice (1, 2, or 3) found in b,
-// or 0 if none is present.
-func parseChoiceFrom(b []byte) int {
-	for _, c := range b {
-		switch c {
-		case '1':
-			return 1
-		case '2':
-			return 2
-		case '3':
-			return 3
-		}
-	}
-	return 0
-}
-
 // writeTerm encodes text as a base64 terminal data frame and writes it to the
-// session lane WebSocket.
+// session lane WebSocket. Safe to call concurrently: Conn.Write may be called
+// concurrently with itself and with other Conn methods (only Read may not).
 func writeTerm(ctx context.Context, conn *websocket.Conn, text string) {
 	msg, _ := json.Marshal(struct {
 		Type string `json:"type"`
@@ -275,53 +252,13 @@ func writeTerm(ctx context.Context, conn *websocket.Conn, text string) {
 	conn.Write(ctx, websocket.MessageText, msg) //nolint:errcheck
 }
 
-// readChoice reads keyboard input from the session lane and returns the user's
-// choice (1/2/3). Keystrokes are echoed back to the terminal. Returns 2
-// (continue) on any read error so a disconnected client does not block forever.
-// pending may be nil; when non-nil, resize frames arriving on this socket
-// during bootstrap are latched into it instead of being discarded.
-func readChoice(ctx context.Context, conn *websocket.Conn, pending *pendingSize) int {
-	for {
-		_, raw, err := conn.Read(ctx)
-		if err != nil {
-			return 2
-		}
-		// Resize frames share this socket and would otherwise be dropped
-		// while the failure menu is open.
-		if recordResizeFrame(raw, pending) {
-			continue
-		}
-		var msg struct {
-			Type string `json:"type"`
-			Data string `json:"data"`
-		}
-		if json.Unmarshal(raw, &msg) != nil || msg.Type != "data" {
-			continue
-		}
-		b, err := base64.StdEncoding.DecodeString(msg.Data)
-		if err != nil || len(b) == 0 {
-			continue
-		}
-		writeTerm(ctx, conn, string(b))
-		if choice := parseChoiceFrom(b); choice != 0 {
-			writeTerm(ctx, conn, "\r\n")
-			return choice
-		}
-		for _, c := range b {
-			if c == '\r' || c == '\n' {
-				writeTerm(ctx, conn, "\r\n")
-				return 2
-			}
-		}
-	}
-}
-
 // Run performs all bootstrap steps before the PTY starts. It streams progress
 // to conn as terminal output frames.
 //
-// Returns (sessionDir, envSlice, nil) on success.
-// Returns ("", nil, ErrAborted) if the user chooses Exit from the failure menu.
-// Returns ("", nil, err) on non-recoverable error.
+// Returns (sessionDir, envSlice, nil) on success — even when some git repos
+// failed to set up; a failed repo is logged, skipped, and reported to the
+// agent via CLAUDE.md/AGENTS.md rather than blocking the session.
+// Returns ("", nil, err) on non-recoverable error (folder/config setup).
 func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessionDir string, env []string, err error) {
 	sessionDir = filepath.Join(b.BaseDir, "session-"+b.SessionID)
 
@@ -336,19 +273,9 @@ func (b *SessionBootstrap) Run(ctx context.Context, conn *websocket.Conn) (sessi
 	}
 
 	if len(b.Config.GetGitRepos()) > 0 {
-		for {
-			err = b.setupGitRepos(ctx, conn, sessionDir)
-			if err == nil {
-				break
-			}
-			writeTerm(ctx, conn, fmt.Sprintf("\r\n[retask] Git repo setup failed: %v\r\n", err))
-			writeTerm(ctx, conn, "\r\n  1) Retry\r\n  2) Continue (skip repos)\r\n  3) Exit\r\n\r\nSelection [2]: ")
-			choice := readChoice(ctx, conn, b.Pending)
-			if choice == 3 {
-				return "", nil, ErrAborted
-			}
-			if choice != 1 {
-				break
+		if failures := b.setupGitRepos(ctx, conn, sessionDir); len(failures) > 0 {
+			if warnErr := b.appendGitRepoWarnings(sessionDir, failures); warnErr != nil {
+				b.logError("session_repo_warning_append_failed", "session_id", b.SessionID, "error", warnErr)
 			}
 		}
 	}
@@ -403,7 +330,14 @@ func (b *SessionBootstrap) gitToken(keys ...string) string {
 	return ""
 }
 
-func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Conn, sessionDir string) error {
+// setupGitRepos clones or updates every configured repo concurrently — one
+// goroutine per repo, since they touch disjoint destination directories and
+// independent git processes, so there's no shared state to race on. A repo
+// that fails (after cloneOrFetchWithRetry's own retries) is logged and
+// skipped rather than blocking the others: it never aborts the session.
+// Returns one "<url>: <error>" message per failed repo, in Config order, or
+// nil if every repo succeeded.
+func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Conn, sessionDir string) []string {
 	tokens := map[string]string{
 		"github.com": b.gitToken("GITHUB_TOKEN", "GH_TOKEN"),
 		"gitlab.com": b.gitToken("GITLAB_TOKEN"),
@@ -413,7 +347,12 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 	}
 	tokenEnv := gitTokenEnv(tokens)
 
-	for _, repo := range b.Config.GetGitRepos() {
+	repos := b.Config.GetGitRepos()
+	urls := make([]string, len(repos))
+	errs := make([]error, len(repos))
+
+	var wg sync.WaitGroup
+	for i, repo := range repos {
 		targetDir := repo.GetTargetDir()
 		if targetDir == "" {
 			targetDir = deriveTargetDir(repo.GetUrl())
@@ -424,9 +363,56 @@ func (b *SessionBootstrap) setupGitRepos(ctx context.Context, conn *websocket.Co
 		}
 		dest := filepath.Join(sessionDir, targetDir)
 		cloneURL := normalizeGitRepoURL(repo.GetUrl())
+		urls[i] = repo.GetUrl()
 
-		if err := b.cloneOrFetchWithRetry(ctx, conn, cloneURL, branch, dest, tokenEnv); err != nil {
-			return fmt.Errorf("clone %s: %w", repo.GetUrl(), err)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// Each goroutine only ever writes its own index — errs/urls need
+			// no mutex — and Conn.Write (via writeTerm, inside the retry
+			// helper) is safe to call concurrently with itself.
+			errs[i] = b.cloneOrFetchWithRetry(ctx, conn, cloneURL, branch, dest, tokenEnv)
+		}(i)
+	}
+	wg.Wait()
+
+	var failures []string
+	for i, err := range errs {
+		if err == nil {
+			continue
+		}
+		writeTerm(ctx, conn, fmt.Sprintf("\r\n[repos] %s: setup failed, skipping this repo: %v\r\n", urls[i], err))
+		b.logError("session_repo_setup_failed", "session_id", b.SessionID, "url", urls[i], "error", err)
+		failures = append(failures, fmt.Sprintf("%s: %v", urls[i], err))
+	}
+	return failures
+}
+
+// appendGitRepoWarnings appends a note to CLAUDE.md and AGENTS.md (both
+// already written by writeAgentConfigs before repos were cloned) so the agent
+// knows some repos failed setup and can raise it with the user — mirroring
+// the CLOUD path's setup-warnings pipeline (sandbox-proxy's log.sh).
+func (b *SessionBootstrap) appendGitRepoWarnings(sessionDir string, failures []string) error {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "\n\n## Sandbox setup issues\nSetup had %d git repo(s) fail to clone/update; they were skipped so the session could still start:\n", len(failures))
+	for _, f := range failures {
+		fmt.Fprintf(&sb, "- %s\n", f)
+	}
+	sb.WriteString("Surface this to the user at the start of the conversation and ask them to fix the repo URL/branch/access.\n")
+	note := []byte(sb.String())
+
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+		f, err := os.OpenFile(filepath.Join(sessionDir, name), os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		_, writeErr := f.Write(note)
+		closeErr := f.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 	return nil
