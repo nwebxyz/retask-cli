@@ -20,6 +20,7 @@ import (
 
 	"github.com/nwebxyz/retask-cli/internal/auth"
 	"github.com/nwebxyz/retask-cli/internal/client"
+	"github.com/nwebxyz/retask-cli/internal/cmd/upgrade"
 	"github.com/nwebxyz/retask-cli/internal/config"
 	"github.com/nwebxyz/retask-cli/internal/flags"
 	"github.com/nwebxyz/retask-cli/internal/version"
@@ -52,6 +53,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var noAutoRespond bool
 	var retention string
 	var sessionBuffer string
+	var autoUpgrade string
 	var logFlags logFileFlags
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
@@ -78,6 +80,14 @@ session lane reconnect on their own with exponential backoff. While a session
 lane is down, its output is buffered (drop-oldest) and flushed to the proxy on
 reconnect, so the viewer keeps the most recent output across the gap.
 
+With --auto-upgrade 1h (the default), connect runs "retask upgrade" as its
+first step, before it does anything else. It then re-checks on that interval
+for a newer release: if one is found and no session is currently active, it
+upgrades and restarts itself with the same arguments it was originally
+started with; if a session is active, it waits and checks again next time.
+A failed check (e.g. no network) is logged and never blocks connect from
+continuing to run. --auto-upgrade off disables this entirely.
+
 Every log line goes to two places: the TUI log panel (stderr in headless mode)
 and retask.log in the current folder. The log file rotates Unix-style — the live
 file keeps its name and older generations shift down through retask.log.1,
@@ -90,6 +100,9 @@ Flags:
   --retention string  Delete session folders older than this, checked hourly. Values: 30d, 12h, off (default: 30d)
   --session-buffer    Per-session output retained across a session-lane drop, flushed on
                       reconnect (default: 10MB). 0 disables buffering. Accepts 512KB, 10MB, ...
+  --auto-upgrade string  Check for and apply a newer retask release before connecting, then
+                      again on this interval while running (e.g. 1h, 30m, 1d); minimum
+                      1m; "off" disables it (default: 1h)
   --log-file string   Log file written alongside the TUI/stderr output, relative to the
                       current folder (default: retask.log)
   --no-log-file       Do not write a log file; log to the TUI/stderr only (default: false)
@@ -118,6 +131,27 @@ Environment:
 			if err != nil {
 				return err
 			}
+			autoUpgradeInterval, autoUpgradeOn, err := parseAutoUpgrade(autoUpgrade)
+			if err != nil {
+				return err
+			}
+			// A dev build has no published release to upgrade to or from;
+			// skip the feature entirely rather than erroring every run.
+			autoUpgradeOn = autoUpgradeOn && version.Version != "dev"
+
+			// Auto-upgrade's first step, run before anything else: no session
+			// is active yet, so there is nothing to lose by upgrading now. A
+			// failed check (no network, GitHub unreachable, ...) is reported
+			// but never blocks connect from continuing with the current
+			// version.
+			if autoUpgradeOn {
+				if didUpgrade, err := upgrade.Run(); err != nil {
+					fmt.Fprintf(os.Stderr, "auto-upgrade: %v (continuing with current version)\n", err)
+				} else if didUpgrade {
+					return restartSelf()
+				}
+			}
+
 			sandboxID := args[0]
 
 			// Resolve credentials.
@@ -251,6 +285,18 @@ Environment:
 				go sweeper.Run(ctx)
 			}
 
+			// restartRequested is set once the hourly checker has applied a
+			// new binary to disk; the CLI winds down exactly as it would for
+			// a Ctrl-C, then re-execs into the new version on the way out.
+			var restartRequested atomic.Bool
+			if autoUpgradeOn {
+				checker := newAutoUpgradeChecker(autoUpgradeInterval, sm.HasActiveSessions, logger, func() {
+					restartRequested.Store(true)
+					stop()
+				})
+				go checker.Run(ctx)
+			}
+
 			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
 
 			// A deleted sandbox ends the data lane for good; there is nothing
@@ -280,6 +326,9 @@ Environment:
 			}
 
 			sm.StopAll()
+			if restartRequested.Load() {
+				return restartSelf()
+			}
 			return nil
 		},
 	}
@@ -288,6 +337,7 @@ Environment:
 	cmd.Flags().BoolVar(&noAutoRespond, "no-auto-respond", false, "Disable auto-accepting known agent startup prompts (e.g. folder-trust)")
 	cmd.Flags().StringVar(&retention, "retention", "30d", `Delete session folders older than this (e.g. 30d, 12h); "off" disables`)
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
+	cmd.Flags().StringVar(&autoUpgrade, "auto-upgrade", "1h", `Check for and apply a newer retask release before connecting, then on this interval while running (e.g. 1h, 30m, 1d; minimum 1m); "off" disables it`)
 	logFlags.register(cmd)
 	return cmd
 }
