@@ -1,11 +1,22 @@
 package sandbox
 
 import (
+	"context"
 	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	integrationv1 "github.com/nwebxyz/retask-cli/proto-gen/integration/v1"
 	sandboxv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/sandbox/v1"
 )
 
@@ -257,29 +268,119 @@ func TestBuildSessionEnv_ErrorsWhenConfigMissingToken(t *testing.T) {
 	assert.Error(t, err, "must fail when the backend did not provision NWEB_API_TOKEN")
 }
 
-// --- parseChoiceFrom ---
+// --- setupGitRepos ---
 
-func TestParseChoiceFrom(t *testing.T) {
-	tests := []struct {
-		input []byte
-		want  int
-	}{
-		{[]byte("1"), 1},
-		{[]byte("2"), 2},
-		{[]byte("3"), 3},
-		{[]byte("4"), 0},
-		{[]byte{'\r'}, 0},
-		{[]byte{'\n'}, 0},
-		{[]byte("12"), 1}, // first valid char wins
-		{[]byte("abc2"), 2},
-		{[]byte{}, 0},
+// One repo has a bad remote. It must be logged and skipped, not abort setup:
+// the other two repos — cloned concurrently, one goroutine per repo — still
+// end up on disk. Run with -race to confirm the concurrent clones and their
+// concurrent writeTerm calls don't race on shared state.
+func TestSetupGitRepos_SkipsFailedRepoAndClonesRestConcurrently(t *testing.T) {
+	root := t.TempDir()
+	good1 := initGitRemote(t, filepath.Join(root, "remotes", "good1"))
+	good2 := initGitRemote(t, filepath.Join(root, "remotes", "good2"))
+	badURL := filepath.Join(root, "remotes", "does-not-exist")
+
+	sessionDir := filepath.Join(root, "session")
+	require.NoError(t, os.MkdirAll(sessionDir, 0o755))
+
+	conn, cleanup := discardingWSConn(t)
+	defer cleanup()
+
+	b := &SessionBootstrap{
+		SessionID: "test-session",
+		Config: &sandboxv1.Sandbox_Config{
+			GitRepos: []*integrationv1.GitRepo{
+				{Url: good1, Branch: "main", TargetDir: "good1"},
+				{Url: badURL, Branch: "main", TargetDir: "bad"},
+				{Url: good2, Branch: "main", TargetDir: "good2"},
+			},
+		},
 	}
-	for _, tc := range tests {
-		assert.Equal(t, tc.want, parseChoiceFrom(tc.input), "input=%q", tc.input)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	failures := b.setupGitRepos(ctx, conn, sessionDir)
+
+	require.Len(t, failures, 1, "exactly the bad repo should fail")
+	assert.Contains(t, failures[0], badURL)
+	assert.DirExists(t, filepath.Join(sessionDir, "good1", ".git"),
+		"repo before the bad one in Config order must still be cloned")
+	assert.DirExists(t, filepath.Join(sessionDir, "good2", ".git"),
+		"repo after the bad one in Config order must still be cloned — the loop must not abort on the first failure")
+	assert.NoDirExists(t, filepath.Join(sessionDir, "bad"))
+}
+
+// appendGitRepoWarnings must land on both CLAUDE.md and AGENTS.md — Private
+// VM sessions write them as two independent files (no symlink, unlike the
+// CLOUD path), so the agent reads whichever one it's configured for.
+func TestAppendGitRepoWarnings_AppendsToBothAgentConfigs(t *testing.T) {
+	sessionDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "CLAUDE.md"), []byte("# base prompt\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sessionDir, "AGENTS.md"), []byte("# base prompt\n"), 0o644))
+
+	b := &SessionBootstrap{SessionID: "test-session"}
+	err := b.appendGitRepoWarnings(sessionDir, []string{"https://example.com/foo.git: clone failed: exit status 128"})
+	require.NoError(t, err)
+
+	for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+		content, readErr := os.ReadFile(filepath.Join(sessionDir, name))
+		require.NoError(t, readErr)
+		s := string(content)
+		assert.True(t, strings.HasPrefix(s, "# base prompt\n"), "%s: original content must be preserved, got %q", name, s)
+		assert.Contains(t, s, "## Sandbox setup issues")
+		assert.Contains(t, s, "https://example.com/foo.git: clone failed: exit status 128")
 	}
 }
 
 // helpers
+
+// initGitRemote creates a local git repo with one commit on main, usable as
+// a clone source in tests.
+func initGitRemote(t *testing.T, dir string) string {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+	}
+	run("init", "-q", "-b", "main")
+	run("commit", "-q", "--allow-empty", "-m", "init")
+	return dir
+}
+
+// discardingWSConn dials a real websocket against a local httptest server
+// that reads and discards every frame, so production code that writes
+// progress over the connection (writeTerm) has somewhere real to write —
+// including from multiple goroutines at once.
+func discardingWSConn(t *testing.T) (conn *websocket.Conn, cleanup func()) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.Close(websocket.StatusNormalClosure, "")
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	}))
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	conn, _, err := websocket.Dial(context.Background(), wsURL, nil)
+	require.NoError(t, err)
+
+	return conn, func() {
+		conn.CloseNow() //nolint:errcheck
+		srv.Close()
+	}
+}
 
 func envToMap(env []string) map[string]string {
 	m := make(map[string]string, len(env))

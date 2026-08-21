@@ -305,7 +305,6 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 		Endpoint:     sm.endpoint,
 		BaseDir:      sm.baseDir,
 		Log:          sm.log,
-		Pending:      pending,
 	}
 	sessionDir, env, err := sb.Run(ctx, wsConn)
 	if err != nil {
