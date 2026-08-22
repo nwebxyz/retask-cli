@@ -16,6 +16,7 @@ import (
 	"github.com/nwebxyz/retask-cli/internal/flags"
 	"github.com/nwebxyz/retask-cli/internal/output"
 	commonv1 "github.com/nwebxyz/retask-cli/proto-gen/common/v1"
+	retaskcommonv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/common/v1"
 	taskv1 "github.com/nwebxyz/retask-cli/proto-gen/retask/task/v1"
 	taskv1connect "github.com/nwebxyz/retask-cli/proto-gen/retask/task/v1/taskv1connect"
 )
@@ -198,7 +199,7 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 // ── task create ───────────────────────────────────────────────────────────────
 
 func newCreateCommand(gf *flags.Global) *cobra.Command {
-	var projectID, title, description, priority, dueAt, parentTaskID, reporter string
+	var projectID, title, description, priority, statusID, taskType, dueAt, parentTaskID, reporter string
 	var assignees []string
 	var estimationPoints uint32
 	cmd := &cobra.Command{
@@ -213,12 +214,15 @@ Usage examples:
   retask task create --project-id proj_abc123 --title "New feature" --priority HIGH --due-at "2026-12-31T00:00:00Z"
   retask task create --project-id proj_abc123 --title "Subtask" --parent-task-id task_abc123
   retask task create --project-id proj_abc123 --title "Assigned" --assignee nweb:workspace:member:<uuid>
+  retask task create --project-id proj_abc123 --title "Bug" --status status_todo --task-type type_bug
 
 Flags:
   --project-id string        Required. Project ID to create the task in
   --title string             Required. Task title
   --description string       Optional task description. Accepts simple HTML (e.g. <p>, <b>, <ul>, <li>, <a>)
   --priority string          Priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
+  --status string            Status ID (must exist in the project's statuses)
+  --task-type string         Task type ID (must exist in the project's task types)
   --due-at string            Due date in RFC3339 format (e.g. 2026-12-31T00:00:00Z)
   --parent-task-id string    Parent task ID — makes this a subtask of that task
   --assignee string          Assignee member NRN (repeatable, format: nweb:workspace:member:<uuid>)
@@ -251,6 +255,14 @@ Output fields: task_id`,
 					return fmt.Errorf("invalid --priority %q. Valid values: UNKNOWN, LOW, MEDIUM, HIGH, URGENT", priority)
 				}
 				task.Priority = taskv1.Task_Priority(v)
+			}
+
+			if cmd.Flags().Changed("status") {
+				task.Status = &retaskcommonv1.TaskStatus{StatusId: statusID}
+			}
+
+			if cmd.Flags().Changed("task-type") {
+				task.TaskType = &retaskcommonv1.TaskType{TypeId: taskType}
 			}
 
 			if cmd.Flags().Changed("due-at") {
@@ -302,6 +314,8 @@ Output fields: task_id`,
 	cmd.Flags().StringVar(&title, "title", "", "Task title (required)")
 	cmd.Flags().StringVar(&description, "description", "", "Task description (accepts simple HTML)")
 	cmd.Flags().StringVar(&priority, "priority", "", "Priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT")
+	cmd.Flags().StringVar(&statusID, "status", "", "Status ID (must exist in the project's statuses)")
+	cmd.Flags().StringVar(&taskType, "task-type", "", "Task type ID (must exist in the project's task types)")
 	cmd.Flags().StringVar(&dueAt, "due-at", "", "Due date in RFC3339 format (e.g. 2026-12-31T00:00:00Z)")
 	cmd.Flags().StringVar(&parentTaskID, "parent-task-id", "", "Parent task ID (makes this a subtask)")
 	cmd.Flags().StringArrayVar(&assignees, "assignee", nil, "Assignee member NRN (repeatable, format: nweb:workspace:member:<uuid>)")
