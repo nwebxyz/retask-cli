@@ -17,12 +17,30 @@ import (
 // keeps normalize robust to any residual sequences.
 var ansiRE = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]|\x1b\\][^\x07]*\x07")
 
-// rule maps a normalized substring of an agent's interactive prompt to the
-// keystrokes that accept it. See defaultPromptRules for the shipped set.
+// Keystrokes written to the PTY to drive an agent's arrow-key menu.
+const (
+	keyUp      = "\x1b[A"
+	keyDown    = "\x1b[B"
+	keyConfirm = "\r"
+)
+
+// focusMarkers are the leading glyphs an Ink-style select list uses to mark the
+// focused row. Deliberately narrow — no bare ">" — because a false marker means
+// confirming the wrong option, whereas failing to find one only means the
+// watcher waits and then leaves the prompt alone.
+var focusMarkers = []string{"❯", "›", "▶", "▸"}
+
+// maxFocusSteps bounds how many arrow keys a rule may send while moving focus
+// onto its accepting option. A menu that never responds (or one whose option is
+// off screen) exhausts the budget and the rule is abandoned untouched.
+const maxFocusSteps = 12
+
+// rule describes an interactive agent prompt and which option accepts it.
+// See defaultPromptRules for the shipped set.
 type rule struct {
-	name  string // log identifier
-	match string // normalized (see normalize) substring that detects the prompt
-	send  string // bytes written to the PTY stdin when matched
+	name   string // log identifier
+	match  string // normalized (see normalize) substring that detects the prompt
+	accept string // normalized substring of the option line that must hold focus
 }
 
 // defaultPromptRules returns the prompt-acceptance rules applied to a session's
@@ -33,8 +51,11 @@ func defaultPromptRules() []rule {
 		// Claude Code startup trust dialog. Anchor on the affirmative menu option
 		// ("...I trust this folder"), NOT the headline or descriptive copy: the
 		// option label is stable across releases, and matching it means the
-		// interactive menu is on screen. Accept the highlighted default with Enter.
-		{name: "claude-trust", match: "trust this folder", send: "\r"},
+		// interactive menu is on screen. The same text identifies the row that
+		// must hold focus before Enter is pressed — Claude Code renders this
+		// dialog cancel-first and focuses the cancel option ("No, exit"), so a
+		// bare Enter would decline and exit the agent.
+		{name: "claude-trust", match: "trust this folder", accept: "trust this folder"},
 	}
 }
 
@@ -50,24 +71,47 @@ const defaultPollInterval = 500 * time.Millisecond
 const defaultPromptWindow = 120 * time.Second
 
 // promptWatcher polls a session's rendered terminal screen for known startup
-// prompts and injects the accept keystroke once per rule (fire-once). It reads
-// the emulator screen rather than the raw byte stream, because TUI agents (e.g.
-// Claude Code, built on Ink) draw with cursor positioning and in-place redraws,
-// so the prompt text never appears as a contiguous run in the raw output.
+// prompts and accepts each one once (fire-once). It reads the emulator screen
+// rather than the raw byte stream, because TUI agents (e.g. Claude Code, built
+// on Ink) draw with cursor positioning and in-place redraws, so the prompt text
+// never appears as a contiguous run in the raw output.
+//
+// Acceptance is focus-aware: the watcher locates the focus marker and the
+// accepting option on the rendered screen and steps focus onto that option
+// before pressing Enter, rather than trusting the menu's default. Agents place
+// the default on the DECLINING option for consequential prompts, so a bare
+// Enter would exit the agent — and the ordering has already changed once.
 type promptWatcher struct {
 	screen   func() []string // rendered screen provider (e.g. Runner.Lines)
-	stdin    io.Writer       // PTY stdin, where accept keystrokes are injected
+	stdin    io.Writer       // PTY stdin, where keystrokes are injected
 	rules    []rule
 	interval time.Duration
 	window   time.Duration
-	log      *slog.Logger // optional
+	log      *slog.Logger    // optional
+	steps    map[string]int  // remaining focus-navigation budget, by rule name
+	detected map[string]bool // rules already logged as detected, by rule name
+	answered map[string]bool // rules already resolved or reported, by rule name
 }
 
 func newPromptWatcher(screen func() []string, stdin io.Writer, rules []rule, interval, window time.Duration, log *slog.Logger) *promptWatcher {
-	return &promptWatcher{screen: screen, stdin: stdin, rules: rules, interval: interval, window: window, log: log}
+	steps := make(map[string]int, len(rules))
+	for _, r := range rules {
+		steps[r.name] = maxFocusSteps
+	}
+	return &promptWatcher{
+		screen:   screen,
+		stdin:    stdin,
+		rules:    rules,
+		interval: interval,
+		window:   window,
+		log:      log,
+		steps:    steps,
+		detected: make(map[string]bool, len(rules)),
+		answered: make(map[string]bool, len(rules)),
+	}
 }
 
-// Run polls the rendered screen until every rule has fired, the watch window
+// Run polls the rendered screen until every rule has finished, the watch window
 // elapses, or ctx is cancelled. It owns w.rules for its lifetime, so no locking
 // is needed. Intended to run in its own goroutine.
 func (w *promptWatcher) Run(ctx context.Context) {
@@ -83,14 +127,17 @@ func (w *promptWatcher) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if !time.Now().Before(deadline) {
+				w.leaveRemainingForHuman("window_elapsed")
 				return
 			}
-			norm := normalize([]byte(strings.Join(w.screen(), "\n")))
+			lines := w.screen()
+			norm := normalize([]byte(strings.Join(lines, "\n")))
 			kept := w.rules[:0]
 			for _, r := range w.rules {
-				if strings.Contains(norm, r.match) {
-					w.fire(r)
-					continue // fire-once: drop the rule
+				// A rule survives the tick unless it is finished: accepted, or
+				// abandoned. Each tick advances an on-screen prompt by one step.
+				if strings.Contains(norm, r.match) && w.advance(r, lines) {
+					continue
 				}
 				kept = append(kept, r)
 			}
@@ -102,20 +149,117 @@ func (w *promptWatcher) Run(ctx context.Context) {
 	}
 }
 
-// fire injects a matched rule's accept keystroke and logs the outcome.
-func (w *promptWatcher) fire(r rule) {
-	if w.log != nil {
-		w.log.Info("prompt_detected", "rule", r.name, "match", r.match)
+// advance takes one step on a detected prompt: it presses Enter when the
+// accepting option already holds focus, otherwise moves focus one row toward it.
+// It reports whether the rule is finished — accepted, abandoned after
+// maxFocusSteps, or dropped because stdin failed.
+//
+// Abandoning leaves the dialog untouched for a human to answer. That is the safe
+// outcome: pressing Enter without knowing what holds focus is what selects
+// "No, exit".
+func (w *promptWatcher) advance(r rule, lines []string) (done bool) {
+	if !w.detected[r.name] {
+		w.detected[r.name] = true
+		w.logInfo("prompt_detected", "rule", r.name, "match", r.match)
 	}
-	if _, err := w.stdin.Write([]byte(r.send)); err != nil {
-		if w.log != nil {
-			w.log.Error("prompt_autorespond_failed", "rule", r.name, "error", err)
+
+	target := lineContaining(lines, r.accept)
+	focus := focusedLine(lines)
+	if target < 0 || focus < 0 {
+		return false // option list not rendered yet — keep waiting
+	}
+
+	if focus == target {
+		if !w.press(r, keyConfirm) {
+			return true
 		}
-		return
+		w.logInfo("prompt_autoresponded", "rule", r.name)
+		return true
 	}
+
+	if w.steps[r.name] <= 0 {
+		w.leaveForHuman(r, "focus_unreachable")
+		return true
+	}
+	w.steps[r.name]--
+	key := keyDown
+	if target < focus {
+		key = keyUp
+	}
+	return !w.press(r, key)
+}
+
+// press writes keys to the PTY stdin, reporting whether the write succeeded.
+func (w *promptWatcher) press(r rule, keys string) (ok bool) {
+	if _, err := w.stdin.Write([]byte(keys)); err != nil {
+		w.logError("prompt_autorespond_failed", "rule", r.name, "error", err)
+		return false
+	}
+	return true
+}
+
+// leaveForHuman records that a detected prompt was deliberately NOT answered.
+// The watcher never closes the PTY or ends the session, so the dialog stays on
+// screen and stays interactive: an operator can attach and answer it by hand.
+func (w *promptWatcher) leaveForHuman(r rule, reason string) {
+	w.answered[r.name] = true // report once per rule
+	w.logWarn("prompt_left_for_human",
+		"rule", r.name, "accept", r.accept, "reason", reason,
+		"detail", "prompt not auto-accepted; session left running for a manual answer")
+}
+
+// leaveRemainingForHuman reports every prompt that was detected but never
+// answered — e.g. an agent release that renamed the option we accept on.
+func (w *promptWatcher) leaveRemainingForHuman(reason string) {
+	for _, r := range w.rules {
+		if w.detected[r.name] && !w.answered[r.name] {
+			w.leaveForHuman(r, reason)
+		}
+	}
+}
+
+func (w *promptWatcher) logInfo(msg string, args ...any) {
 	if w.log != nil {
-		w.log.Info("prompt_autoresponded", "rule", r.name)
+		w.log.Info(msg, args...)
 	}
+}
+
+func (w *promptWatcher) logWarn(msg string, args ...any) {
+	if w.log != nil {
+		w.log.Warn(msg, args...)
+	}
+}
+
+func (w *promptWatcher) logError(msg string, args ...any) {
+	if w.log != nil {
+		w.log.Error(msg, args...)
+	}
+}
+
+// lineContaining returns the index of the first line whose normalized text
+// contains want, or -1. Matching per line (rather than on the whole screen)
+// is what lets the watcher compare an option's position against the focus.
+func lineContaining(lines []string, want string) int {
+	for i, l := range lines {
+		if strings.Contains(normalize([]byte(l)), want) {
+			return i
+		}
+	}
+	return -1
+}
+
+// focusedLine returns the index of the first line whose leading glyph is a
+// focus marker, or -1 when no option is focused (or the menu has not rendered).
+func focusedLine(lines []string) int {
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(string(ansiRE.ReplaceAll([]byte(l), nil)))
+		for _, m := range focusMarkers {
+			if strings.HasPrefix(trimmed, m) {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // normalize reduces terminal text to lowercase ASCII words separated by single

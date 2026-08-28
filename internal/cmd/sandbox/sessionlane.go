@@ -378,7 +378,9 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	if sm.autoRespond {
 		// Auto-accept known startup prompts (e.g. the agent's folder-trust
 		// dialog) so unattended sessions don't stall; stops once every rule has
-		// fired or the watch window ends.
+		// resolved or the watch window ends. A prompt it cannot resolve is left
+		// untouched and the session keeps running, so an operator can attach and
+		// answer it by hand.
 		go newPromptWatcher(r.Lines, r.StdinWriter(), defaultPromptRules(), defaultPollInterval, defaultPromptWindow, sm.log).Run(ctx)
 	}
 
