@@ -44,8 +44,8 @@ type rule struct {
 }
 
 // defaultPromptRules returns the prompt-acceptance rules applied to a session's
-// rendered terminal screen. Extend by appending a rule. Currently handles only
-// Claude Code's startup folder-trust dialog.
+// rendered terminal screen. Extend by appending a rule. Handles the startup
+// folder/workspace-trust dialogs shipped by Claude Code and Codex.
 func defaultPromptRules() []rule {
 	return []rule{
 		// Claude Code startup trust dialog. Anchor on the affirmative menu option
@@ -56,6 +56,16 @@ func defaultPromptRules() []rule {
 		// dialog cancel-first and focuses the cancel option ("No, exit"), so a
 		// bare Enter would decline and exit the agent.
 		{name: "claude-trust", match: "trust this folder", accept: "trust this folder"},
+		// Codex startup workspace-trust dialog. Anchor detection on the dialog's
+		// descriptive copy ("...trust the contents of this directory...") rather
+		// than the numbered option labels, whose leading digits are common enough
+		// in ordinary agent output to false-positive on. Codex ships this dialog
+		// affirmative-first, focused on "1. Yes, continue" by default — the
+		// opposite layout from Claude Code's cancel-first dialog — but the
+		// watcher still steps focus onto the accepting option itself rather than
+		// trusting that default: option order is agent- and release-specific,
+		// and it has already changed once for Claude Code.
+		{name: "codex-trust", match: "trust the contents of this directory", accept: "yes continue"},
 	}
 }
 

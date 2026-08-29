@@ -50,6 +50,48 @@ func TestDefaultPromptRules_MatchesNormalizedTrustOption(t *testing.T) {
 	}
 }
 
+func TestDefaultPromptRules_MatchesNormalizedCodexOption(t *testing.T) {
+	headline := normalize([]byte(
+		"Do you trust the contents of this directory? Working with untrusted " +
+			"contents comes with higher risk of prompt injection."))
+	for _, r := range defaultPromptRules() {
+		if r.name == "codex-trust" {
+			assert.True(t, strings.Contains(headline, r.match),
+				"codex-trust match %q not found in %q", r.match, headline)
+		}
+	}
+
+	// The rendered option line, as the emulator would surface it, regardless of
+	// which row currently holds focus.
+	for _, line := range []string{"  1. Yes, continue", "› 1. Yes, continue"} {
+		norm := normalize([]byte(line))
+		rules := defaultPromptRules()
+		assert.NotEmpty(t, rules)
+		for _, r := range rules {
+			if r.name == "codex-trust" {
+				assert.True(t, strings.Contains(norm, r.accept),
+					"codex-trust accept %q not found in %q", r.accept, norm)
+			}
+		}
+	}
+}
+
+// ruleNamed returns the single default rule with the given name, wrapped in a
+// slice. Tests that exercise one dialog's navigation/timing in isolation use
+// this instead of the full defaultPromptRules() set: a fixture that only
+// renders one agent's dialog never matches the other agent's rule, which would
+// otherwise sit unresolved for the rest of the run and force the watcher to
+// poll until the watch window elapses instead of finishing once its one
+// relevant rule resolves.
+func ruleNamed(name string) []rule {
+	for _, r := range defaultPromptRules() {
+		if r.name == name {
+			return []rule{r}
+		}
+	}
+	return nil
+}
+
 // --- test doubles ---
 
 // lockedBuffer is a goroutine-safe io.Writer for asserting on output the watcher
@@ -101,6 +143,26 @@ func newTrustSelect(options []string, cursor int) *fakeSelect {
 // focus starting on cancel.
 func currentTrustSelect() *fakeSelect {
 	return newTrustSelect([]string{"No, exit", "Yes, I trust this folder"}, 0)
+}
+
+func newCodexTrustSelect(options []string, cursor int) *fakeSelect {
+	return &fakeSelect{
+		header: []string{
+			"Do you trust the contents of this directory?",
+			"Working with untrusted contents comes with higher risk of prompt injection.",
+			"Trusting the directory allows project-local config, hooks, and exec policies to load.",
+			"",
+		},
+		options: options,
+		cursor:  cursor,
+	}
+}
+
+// currentCodexSelect is the dialog Codex ships today: affirmative first, and
+// focus starting on the affirmative option — the opposite default from Claude
+// Code's cancel-first dialog.
+func currentCodexSelect() *fakeSelect {
+	return newCodexTrustSelect([]string{"1. Yes, continue", "2. No, quit"}, 0)
 }
 
 func (s *fakeSelect) Write(p []byte) (int, error) {
@@ -160,7 +222,7 @@ func (s *fakeSelect) Keys() []string {
 
 func TestPromptWatcher_MovesFocusToAffirmativeThenConfirms(t *testing.T) {
 	sel := currentTrustSelect() // focus starts on "No, exit"
-	w := newPromptWatcher(sel.Screen, sel, defaultPromptRules(), 2*time.Millisecond, 2*time.Second, nil)
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("claude-trust"), 2*time.Millisecond, 2*time.Second, nil)
 
 	w.Run(context.Background())
 
@@ -171,7 +233,7 @@ func TestPromptWatcher_MovesFocusToAffirmativeThenConfirms(t *testing.T) {
 func TestPromptWatcher_MovesFocusUpwardWhenAffirmativeIsAbove(t *testing.T) {
 	// Affirmative first, focus parked on the cancel option below it.
 	sel := newTrustSelect([]string{"Yes, I trust this folder", "No, exit"}, 1)
-	w := newPromptWatcher(sel.Screen, sel, defaultPromptRules(), 2*time.Millisecond, 2*time.Second, nil)
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("claude-trust"), 2*time.Millisecond, 2*time.Second, nil)
 
 	w.Run(context.Background())
 
@@ -181,7 +243,7 @@ func TestPromptWatcher_MovesFocusUpwardWhenAffirmativeIsAbove(t *testing.T) {
 
 func TestPromptWatcher_ConfirmsWithoutMovingWhenAffirmativeFocused(t *testing.T) {
 	sel := newTrustSelect([]string{"Yes, I trust this folder", "No, exit"}, 0)
-	w := newPromptWatcher(sel.Screen, sel, defaultPromptRules(), 2*time.Millisecond, 2*time.Second, nil)
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("claude-trust"), 2*time.Millisecond, 2*time.Second, nil)
 
 	w.Run(context.Background())
 
@@ -200,7 +262,7 @@ func TestPromptWatcher_NeverConfirmsWhileCancelStaysFocused(t *testing.T) {
 			"  Yes, I trust this folder",
 		}
 	}
-	w := newPromptWatcher(frozen, stdin, defaultPromptRules(), 2*time.Millisecond, 2*time.Second, nil)
+	w := newPromptWatcher(frozen, stdin, ruleNamed("claude-trust"), 2*time.Millisecond, 2*time.Second, nil)
 
 	w.Run(context.Background())
 
@@ -215,13 +277,54 @@ func TestPromptWatcher_GivesUpAfterBoundedNavigation(t *testing.T) {
 	}
 	// Window far exceeds what bounded navigation needs, so returning early proves
 	// the watcher stopped on its own step budget rather than on the deadline.
-	w := newPromptWatcher(frozen, stdin, defaultPromptRules(), time.Millisecond, 10*time.Second, nil)
+	w := newPromptWatcher(frozen, stdin, ruleNamed("claude-trust"), time.Millisecond, 10*time.Second, nil)
 
 	start := time.Now()
 	w.Run(context.Background())
 
 	assert.Less(t, time.Since(start), 5*time.Second, "gave up before the watch window elapsed")
 	assert.Equal(t, maxFocusSteps, strings.Count(stdin.String(), "\x1b[B"), "navigation is bounded")
+}
+
+// --- promptWatcher: focus-aware acceptance (Codex) ---
+
+func TestPromptWatcher_Codex_ConfirmsWithoutMovingWhenAffirmativeFocused(t *testing.T) {
+	sel := currentCodexSelect() // focus starts on "1. Yes, continue"
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("codex-trust"), 2*time.Millisecond, 2*time.Second, nil)
+
+	w.Run(context.Background())
+
+	assert.Equal(t, "1. Yes, continue", sel.Confirmed())
+	assert.Equal(t, []string{"\r"}, sel.Keys(), "no arrow keys when already focused")
+}
+
+func TestPromptWatcher_Codex_MovesFocusToAffirmativeWhenQuitIsFocused(t *testing.T) {
+	// Defends against a future release flipping Codex's default focus to match
+	// Claude Code's cancel-first layout.
+	sel := newCodexTrustSelect([]string{"2. No, quit", "1. Yes, continue"}, 0)
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("codex-trust"), 2*time.Millisecond, 2*time.Second, nil)
+
+	w.Run(context.Background())
+
+	assert.Equal(t, "1. Yes, continue", sel.Confirmed(),
+		"moves focus off the declining option before pressing Enter")
+}
+
+func TestPromptWatcher_Codex_NeverConfirmsWhileQuitStaysFocused(t *testing.T) {
+	stdin := &lockedBuffer{}
+	frozen := func() []string {
+		return []string{
+			"Do you trust the contents of this directory?",
+			"❯ 2. No, quit",
+			"  1. Yes, continue",
+		}
+	}
+	w := newPromptWatcher(frozen, stdin, ruleNamed("codex-trust"), 2*time.Millisecond, 2*time.Second, nil)
+
+	w.Run(context.Background())
+
+	assert.NotContains(t, stdin.String(), "\r",
+		"never press Enter while the declining option holds focus")
 }
 
 func TestPromptWatcher_WaitsWhileNoOptionIsFocusedYet(t *testing.T) {
@@ -244,7 +347,7 @@ func TestPromptWatcher_WaitsWhileNoOptionIsFocusedYet(t *testing.T) {
 
 func TestPromptWatcher_FiresOnce(t *testing.T) {
 	sel := currentTrustSelect()
-	w := newPromptWatcher(sel.Screen, sel, defaultPromptRules(), 2*time.Millisecond, time.Second, nil)
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("claude-trust"), 2*time.Millisecond, time.Second, nil)
 
 	w.Run(context.Background()) // returns once the single rule fires
 
@@ -290,7 +393,7 @@ func TestPromptWatcher_LogsDetectionAndResponse(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, nil))
 	sel := currentTrustSelect()
-	w := newPromptWatcher(sel.Screen, sel, defaultPromptRules(), 2*time.Millisecond, time.Second, log)
+	w := newPromptWatcher(sel.Screen, sel, ruleNamed("claude-trust"), 2*time.Millisecond, time.Second, log)
 
 	w.Run(context.Background())
 
@@ -307,7 +410,7 @@ func TestPromptWatcher_LogsGiveUpWithoutConfirming(t *testing.T) {
 	frozen := func() []string {
 		return []string{"❯ No, exit", "  Yes, I trust this folder"}
 	}
-	w := newPromptWatcher(frozen, stdin, defaultPromptRules(), time.Millisecond, 10*time.Second, log)
+	w := newPromptWatcher(frozen, stdin, ruleNamed("claude-trust"), time.Millisecond, 10*time.Second, log)
 
 	w.Run(context.Background())
 
@@ -359,7 +462,7 @@ func TestPromptWatcher_LogsPromptLeftForHumanAfterGivingUpNavigating(t *testing.
 	frozen := func() []string {
 		return []string{"❯ No, exit", "  Yes, I trust this folder"}
 	}
-	w := newPromptWatcher(frozen, stdin, defaultPromptRules(), time.Millisecond, 10*time.Second, log)
+	w := newPromptWatcher(frozen, stdin, ruleNamed("claude-trust"), time.Millisecond, 10*time.Second, log)
 
 	w.Run(context.Background())
 
