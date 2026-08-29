@@ -59,13 +59,20 @@ func defaultPromptRules() []rule {
 		// Codex startup workspace-trust dialog. Anchor detection on the dialog's
 		// descriptive copy ("...trust the contents of this directory...") rather
 		// than the numbered option labels, whose leading digits are common enough
-		// in ordinary agent output to false-positive on. Codex ships this dialog
-		// affirmative-first, focused on "1. Yes, continue" by default — the
-		// opposite layout from Claude Code's cancel-first dialog — but the
-		// watcher still steps focus onto the accepting option itself rather than
-		// trusting that default: option order is agent- and release-specific,
-		// and it has already changed once for Claude Code.
-		{name: "codex-trust", match: "trust the contents of this directory", accept: "yes continue"},
+		// in ordinary agent output to false-positive on. accept is deliberately
+		// just "yes", not the full "yes continue" label: the dialog's own body
+		// copy never contains "yes", so the shorter anchor still lands on the
+		// right row while surviving a label reword that drops or changes
+		// "continue" (unlike claude-trust's accept, which can't be shortened the
+		// same way — Claude Code's own headline already contains "trust", so
+		// trimming its accept to "trust" would match that headline instead of the
+		// option row). Codex ships this dialog affirmative-first, focused on
+		// "1. Yes, continue" by default — the opposite layout from Claude Code's
+		// cancel-first dialog — but the watcher still steps focus onto the
+		// accepting option itself rather than trusting that default: option order
+		// is agent- and release-specific, and it has already changed once for
+		// Claude Code.
+		{name: "codex-trust", match: "trust the contents of this directory", accept: "yes"},
 	}
 }
 
