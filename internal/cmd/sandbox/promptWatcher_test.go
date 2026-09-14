@@ -270,20 +270,113 @@ func TestPromptWatcher_NeverConfirmsWhileCancelStaysFocused(t *testing.T) {
 		"never press Enter while the cancel option holds focus")
 }
 
-func TestPromptWatcher_GivesUpAfterBoundedNavigation(t *testing.T) {
+func TestPromptWatcher_SendsOneKeyThenGivesUpWhenFocusNeverMoves(t *testing.T) {
 	stdin := &lockedBuffer{}
 	frozen := func() []string {
 		return []string{"❯ No, exit", "  Yes, I trust this folder"}
 	}
-	// Window far exceeds what bounded navigation needs, so returning early proves
-	// the watcher stopped on its own step budget rather than on the deadline.
+	// Window far exceeds the settle wait, so returning early proves the watcher
+	// gave up on its own rather than on the deadline.
 	w := newPromptWatcher(frozen, stdin, ruleNamed("claude-trust"), time.Millisecond, 10*time.Second, nil)
 
 	start := time.Now()
 	w.Run(context.Background())
 
 	assert.Less(t, time.Since(start), 5*time.Second, "gave up before the watch window elapsed")
-	assert.Equal(t, maxFocusSteps, strings.Count(stdin.String(), "\x1b[B"), "navigation is bounded")
+	assert.Equal(t, keyDown, stdin.String(), "no further keys once one had no visible effect")
+}
+
+// A key the screen never reflects must not be followed by more keys: they
+// could be queued by the agent and applied after the watcher reads a stale
+// focus, landing Enter on the wrong option. This is the shape of the production
+// failure where the terminal emulator lost track of the cursor: the agent's
+// redraw was painted over the top rows as a stale copy of the menu while the
+// dialog's own rows never changed, and chasing that view walked focus up and
+// down until the step budget ran out.
+func TestPromptWatcher_StopsAfterOneKeyWhenScreenDoesNotReflectIt(t *testing.T) {
+	stdin := &lockedBuffer{}
+	dialog := []string{
+		"",
+		"─────────────────────────────",
+		" Accessing workspace:",
+		"",
+		" Quick safety check: Is this a project you created or one you trust?",
+		"",
+		" ❯ No, exit",
+		"   Yes, I trust this folder",
+	}
+	screen := func() []string {
+		if stdin.String() == "" {
+			return dialog
+		}
+		desynced := append([]string{}, dialog...)
+		desynced[0] = "   No, exit"
+		desynced[1] = "─❯─Yes, I trust this folder──"
+		return desynced
+	}
+	w := newPromptWatcher(screen, stdin, ruleNamed("claude-trust"), time.Millisecond, 10*time.Second, nil)
+
+	w.Run(context.Background())
+
+	assert.Equal(t, keyDown, stdin.String(), "exactly one arrow key and never Enter")
+}
+
+// laggyScreen shows the effect of each key only after a few polls, like an agent
+// that is busy when the key arrives.
+type laggyScreen struct {
+	sel   *fakeSelect
+	lag   int
+	keys  int
+	polls int
+	last  []string
+}
+
+func (l *laggyScreen) Screen() []string {
+	if n := len(l.sel.Keys()); n != l.keys {
+		l.keys, l.polls = n, 0
+	}
+	if l.last != nil && l.polls < l.lag {
+		l.polls++
+		return l.last
+	}
+	l.last = l.sel.Screen()
+	return l.last
+}
+
+func TestPromptWatcher_WaitsForSlowRedrawWithoutResendingKeys(t *testing.T) {
+	sel := currentTrustSelect()
+	screen := &laggyScreen{sel: sel, lag: 3} // fewer polls than the settle wait
+	w := newPromptWatcher(screen.Screen, sel, ruleNamed("claude-trust"), time.Millisecond, 2*time.Second, nil)
+
+	w.Run(context.Background())
+
+	assert.Equal(t, "Yes, I trust this folder", sel.Confirmed())
+	assert.Equal(t, []string{keyDown, keyConfirm}, sel.Keys(), "one arrow, then Enter once the redraw shows it")
+}
+
+func TestPromptWatcher_GivesUpAfterBoundedNavigation(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logBuf, nil))
+	stdin := &lockedBuffer{}
+	// Focus moves on every key, but only between the first two rows, so it never
+	// reaches the accepting option on the third.
+	screen := func() []string {
+		if strings.Count(stdin.String(), keyDown)%2 == 0 {
+			return []string{"❯ No, exit", "  Not now", "  Yes, I trust this folder"}
+		}
+		return []string{"  No, exit", "❯ Not now", "  Yes, I trust this folder"}
+	}
+	// Window far exceeds what bounded navigation needs, so returning early proves
+	// the watcher stopped on its own step budget rather than on the deadline.
+	w := newPromptWatcher(screen, stdin, ruleNamed("claude-trust"), time.Millisecond, 10*time.Second, log)
+
+	start := time.Now()
+	w.Run(context.Background())
+
+	assert.Less(t, time.Since(start), 5*time.Second, "gave up before the watch window elapsed")
+	assert.Equal(t, maxFocusSteps, strings.Count(stdin.String(), keyDown), "navigation is bounded")
+	assert.NotContains(t, stdin.String(), keyConfirm)
+	assert.Contains(t, logBuf.String(), "focus_unreachable", "the reason is recorded")
 }
 
 // --- promptWatcher: focus-aware acceptance (Codex) ---
@@ -416,7 +509,7 @@ func TestPromptWatcher_LogsGiveUpWithoutConfirming(t *testing.T) {
 
 	assert.Contains(t, logBuf.String(), "prompt_left_for_human",
 		"giving up without confirming is logged")
-	assert.Contains(t, logBuf.String(), "focus_unreachable", "the reason is recorded")
+	assert.Contains(t, logBuf.String(), "focus_not_moving", "the reason is recorded")
 }
 
 // --- promptWatcher: falls back to the human ---

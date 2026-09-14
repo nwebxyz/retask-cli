@@ -31,9 +31,18 @@ const (
 var focusMarkers = []string{"❯", "›", "▶", "▸"}
 
 // maxFocusSteps bounds how many arrow keys a rule may send while moving focus
-// onto its accepting option. A menu that never responds (or one whose option is
-// off screen) exhausts the budget and the rule is abandoned untouched.
+// onto its accepting option. A menu whose focus moves without ever reaching the
+// option (e.g. one whose option is off screen) exhausts the budget and the rule
+// is abandoned untouched.
 const maxFocusSteps = 12
+
+// focusSettlePolls is how many polls the watcher waits for an arrow key to show
+// up on screen as moved focus (3s at defaultPollInterval) before abandoning the
+// rule. No other key is sent while one is unconfirmed: keys queued by a busy
+// agent would be applied after the watcher read a stale focus and could put
+// Enter on the wrong option, and a screen that does not reflect keys at all
+// (e.g. an emulator that lost track of the cursor) is not one to act on.
+const focusSettlePolls = 6
 
 // rule describes an interactive agent prompt and which option accepts it.
 // See defaultPromptRules for the shipped set.
@@ -104,10 +113,18 @@ type promptWatcher struct {
 	rules    []rule
 	interval time.Duration
 	window   time.Duration
-	log      *slog.Logger    // optional
-	steps    map[string]int  // remaining focus-navigation budget, by rule name
-	detected map[string]bool // rules already logged as detected, by rule name
-	answered map[string]bool // rules already resolved or reported, by rule name
+	log      *slog.Logger       // optional
+	steps    map[string]int     // remaining focus-navigation budget, by rule name
+	sent     map[string]sentKey // arrow key not yet reflected on screen, by rule name
+	detected map[string]bool    // rules already logged as detected, by rule name
+	answered map[string]bool    // rules already resolved or reported, by rule name
+}
+
+// sentKey records an arrow key awaiting its effect: the focused row when it was
+// sent, and how many polls have shown focus still on that row.
+type sentKey struct {
+	focus int
+	polls int
 }
 
 func newPromptWatcher(screen func() []string, stdin io.Writer, rules []rule, interval, window time.Duration, log *slog.Logger) *promptWatcher {
@@ -123,6 +140,7 @@ func newPromptWatcher(screen func() []string, stdin io.Writer, rules []rule, int
 		window:   window,
 		log:      log,
 		steps:    steps,
+		sent:     make(map[string]sentKey, len(rules)),
 		detected: make(map[string]bool, len(rules)),
 		answered: make(map[string]bool, len(rules)),
 	}
@@ -167,9 +185,10 @@ func (w *promptWatcher) Run(ctx context.Context) {
 }
 
 // advance takes one step on a detected prompt: it presses Enter when the
-// accepting option already holds focus, otherwise moves focus one row toward it.
+// accepting option already holds focus, otherwise moves focus one row toward it
+// and waits for the screen to show that move before sending anything else.
 // It reports whether the rule is finished — accepted, abandoned after
-// maxFocusSteps, or dropped because stdin failed.
+// maxFocusSteps or focusSettlePolls, or dropped because stdin failed.
 //
 // Abandoning leaves the dialog untouched for a human to answer. That is the safe
 // outcome: pressing Enter without knowing what holds focus is what selects
@@ -184,6 +203,19 @@ func (w *promptWatcher) advance(r rule, lines []string) (done bool) {
 	focus := focusedLine(lines)
 	if target < 0 || focus < 0 {
 		return false // option list not rendered yet — keep waiting
+	}
+
+	if k, ok := w.sent[r.name]; ok {
+		if focus == k.focus {
+			if k.polls >= focusSettlePolls {
+				w.leaveForHuman(r, "focus_not_moving")
+				return true
+			}
+			k.polls++
+			w.sent[r.name] = k
+			return false // last key not reflected on screen yet — send nothing
+		}
+		delete(w.sent, r.name)
 	}
 
 	if focus == target {
@@ -203,7 +235,11 @@ func (w *promptWatcher) advance(r rule, lines []string) (done bool) {
 	if target < focus {
 		key = keyUp
 	}
-	return !w.press(r, key)
+	if !w.press(r, key) {
+		return true
+	}
+	w.sent[r.name] = sentKey{focus: focus}
+	return false
 }
 
 // press writes keys to the PTY stdin, reporting whether the write succeeded.
