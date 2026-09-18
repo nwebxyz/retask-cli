@@ -107,6 +107,19 @@ func TestHelpManifestMatchesCommandTree(t *testing.T) {
 	}
 }
 
+// TestListCommandsDeclareFields guards that every "list" subcommand supports
+// --fields output selection.
+func TestListCommandsDeclareFields(t *testing.T) {
+	for _, c := range leafCommands(newRootCommand()) {
+		if c.Name() != "list" {
+			continue
+		}
+		if c.LocalNonPersistentFlags().Lookup("fields") == nil {
+			t.Errorf("command %q does not declare --fields", c.CommandPath())
+		}
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

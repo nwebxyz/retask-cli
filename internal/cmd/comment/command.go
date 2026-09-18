@@ -98,8 +98,12 @@ func parseSort(s string) (commentv1.CommentsRequest_Sort, error) {
 
 // ── comment list ──────────────────────────────────────────────────────────────
 
+var commentFields = output.MustFieldSet[*commentv1.Comment](output.Presets{
+	"short": {"comment_id", "workspace_id", "body"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var taskID, parentCommentID, sortStr string
+	var taskID, parentCommentID, sortStr, fields string
 	var createdBy []string
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -114,12 +118,14 @@ Usage examples:
   retask comment list --task task_abc123
   retask comment list --task task_abc123 --parent-comment-id cmt_top123
   retask comment list --task task_abc123 --sort created-asc
+  retask comment list --task task_abc123 --fields @short,created_at
 
 Flags:
   --task string                Required. Task ID whose comments to list
   --parent-comment-id string   List only replies under this comment ID (default: all comments)
   --sort string                Sort order: default, created-asc, created-desc
   --created-by string          Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). Get yours from 'retask auth whoami' (user_nrn).
+  --fields string              Comma-separated output fields, in order. Preset: @short (comment_id, workspace_id, body)
 
 Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, mentioned_member_nrns, attachments, is_edited, created_by_nrn, created_at, updated_at, user_access`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -158,13 +164,14 @@ Output fields: comment_id, workspace_id, target_nrn, parent_comment_id, body, me
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Comments)
+			return commentFields.Print(gf.Pretty, resp.Msg.Comments, fields)
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "Task ID whose comments to list (required)")
 	cmd.Flags().StringVar(&parentCommentID, "parent-comment-id", "", "List only replies under this comment ID (default: all comments)")
 	cmd.Flags().StringVar(&sortStr, "sort", "", "Sort order: default, created-asc, created-desc")
 	cmd.Flags().StringArrayVar(&createdBy, "created-by", nil, "Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). From 'retask auth whoami'.")
+	cmd.Flags().StringVar(&fields, "fields", "", commentFields.Usage())
 	return cmd
 }
 

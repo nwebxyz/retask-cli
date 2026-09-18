@@ -169,8 +169,13 @@ Output fields: customer_id`,
 
 // ── customer list ─────────────────────────────────────────────────────────────
 
+var customerFields = output.MustFieldSet[*customerv1.Customer](output.Presets{
+	"short": {"customer_id", "name"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all customers",
 		Long: `List all customers (admin use).
@@ -178,6 +183,10 @@ func newListCommand(gf *flags.Global) *cobra.Command {
 Usage example:
   retask customer list
   retask customer list --pretty
+  retask customer list --fields @short,email
+
+Flags:
+  --fields string   Comma-separated output fields, in order. Preset: @short (customer_id, name)
 
 Output fields: customer_id, name, email, timezone, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -190,9 +199,11 @@ Output fields: customer_id, name, email, timezone, created_at, updated_at`,
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Customers)
+			return customerFields.Print(gf.Pretty, resp.Msg.Customers, fields)
 		},
 	}
+	cmd.Flags().StringVar(&fields, "fields", "", customerFields.Usage())
+	return cmd
 }
 
 // ── customer get ──────────────────────────────────────────────────────────────

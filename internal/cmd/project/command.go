@@ -60,8 +60,13 @@ func connect(gf *flags.Global) (projectv1connect.ProjectServiceClient, func(), e
 
 // ── project list ──────────────────────────────────────────────────────────────
 
+var projectFields = output.MustFieldSet[*projectv1.Project](output.Presets{
+	"short": {"project_id", "workspace_id", "key", "name"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
 	var archived bool
+	var fields string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List projects",
@@ -71,9 +76,11 @@ Usage examples:
   retask project list
   retask project list --archived
   retask project list --pretty
+  retask project list --fields @short
 
 Flags:
-  --archived    Show only archived projects (default: show non-archived)
+  --archived        Show only archived projects (default: show non-archived)
+  --fields string   Comma-separated output fields, in order. Preset: @short (project_id, workspace_id, key, name)
 
 Output fields: project_id, workspace_id, key, name, description, color, icon, visibility, is_archived, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -100,10 +107,11 @@ Output fields: project_id, workspace_id, key, name, description, color, icon, vi
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Projects)
+			return projectFields.Print(gf.Pretty, resp.Msg.Projects, fields)
 		},
 	}
 	cmd.Flags().BoolVar(&archived, "archived", false, "Show only archived projects")
+	cmd.Flags().StringVar(&fields, "fields", "", projectFields.Usage())
 	return cmd
 }
 
@@ -368,14 +376,23 @@ func newMemberCommand(gf *flags.Global) *cobra.Command {
 	return cmd
 }
 
+var projectMemberFields = output.MustFieldSet[*projectv1.ProjectMember](output.Presets{
+	"short": {"project_member_id", "project_id", "member"},
+})
+
 func newMemberListCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "list <project-id>",
 		Short: "List members of a project",
 		Long: `List all members of a project.
 
-Usage example:
+Usage examples:
   retask project member list proj_abc123
+  retask project member list proj_abc123 --fields @short,role
+
+Flags:
+  --fields string   Comma-separated output fields, in order. Preset: @short (project_member_id, project_id, member)
 
 Output fields: project_member_id, project_id, role, member (workspace_member_id, display_name), created_at`,
 		Args: cobra.ExactArgs(1),
@@ -391,9 +408,11 @@ Output fields: project_member_id, project_id, role, member (workspace_member_id,
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Members)
+			return projectMemberFields.Print(gf.Pretty, resp.Msg.Members, fields)
 		},
 	}
+	cmd.Flags().StringVar(&fields, "fields", "", projectMemberFields.Usage())
+	return cmd
 }
 
 func newMemberAddCommand(gf *flags.Global) *cobra.Command {

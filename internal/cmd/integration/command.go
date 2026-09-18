@@ -71,8 +71,13 @@ func newProviderCommand(gf *flags.Global) *cobra.Command {
 	return cmd
 }
 
+var providerFields = output.MustFieldSet[*integrationv1.Provider](output.Presets{
+	"short": {"provider_id", "name"},
+})
+
 func newProviderListCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List integration providers",
 		Long: `List all available integration providers.
@@ -80,6 +85,10 @@ func newProviderListCommand(gf *flags.Global) *cobra.Command {
 Usage example:
   retask integration provider list
   retask integration provider list --pretty
+  retask integration provider list --fields @short
+
+Flags:
+  --fields string   Comma-separated output fields, in order. Preset: @short (provider_id, name)
 
 Output fields: provider_id, name, logo, disable_oauth_flow, disable_access_token, oauth_authorize_url, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -92,9 +101,11 @@ Output fields: provider_id, name, logo, disable_oauth_flow, disable_access_token
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Providers)
+			return providerFields.Print(gf.Pretty, resp.Msg.Providers, fields)
 		},
 	}
+	cmd.Flags().StringVar(&fields, "fields", "", providerFields.Usage())
+	return cmd
 }
 
 func newProviderGetCommand(gf *flags.Global) *cobra.Command {
@@ -125,8 +136,12 @@ Output fields: provider_id, name, logo, disable_oauth_flow, disable_access_token
 
 // ── integration list ──────────────────────────────────────────────────────────
 
+var integrationFields = output.MustFieldSet[*integrationv1.Integration](output.Presets{
+	"short": {"integration_id", "workspace_id", "provider_id"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var providerID string
+	var providerID, fields string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List integrations",
@@ -136,9 +151,11 @@ Usage examples:
   retask integration list
   retask integration list --provider-id github
   retask integration list --pretty
+  retask integration list --fields @short,level
 
 Flags:
   --provider-id string  Filter by provider ID (e.g. "github")
+  --fields string       Comma-separated output fields, in order. Preset: @short (integration_id, workspace_id, provider_id)
 
 Output fields: integration_id, workspace_id, provider_id, level, owner_member_id, access_level, external_account, expires_at, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -161,10 +178,11 @@ Output fields: integration_id, workspace_id, provider_id, level, owner_member_id
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Integrations)
+			return integrationFields.Print(gf.Pretty, resp.Msg.Integrations, fields)
 		},
 	}
 	cmd.Flags().StringVar(&providerID, "provider-id", "", "Filter by provider ID (e.g. \"github\")")
+	cmd.Flags().StringVar(&fields, "fields", "", integrationFields.Usage())
 	return cmd
 }
 

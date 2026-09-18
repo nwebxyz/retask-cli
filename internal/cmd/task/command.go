@@ -63,8 +63,12 @@ func connect(gf *flags.Global) (taskv1connect.TaskServiceClient, func(), error) 
 
 // ── task list ─────────────────────────────────────────────────────────────────
 
+var taskFields = output.MustFieldSet[*taskv1.Task](output.Presets{
+	"short": {"task_id", "workspace_id", "key", "title"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var projectID, priority string
+	var projectID, priority, fields string
 	var statusIDs, assigneeNrns []string
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -76,12 +80,14 @@ Usage examples:
   retask task list --project-id proj_abc123
   retask task list --project-id proj_abc123 --priority HIGH
   retask task list --assignee "nweb:workspace:member:uuid1" --assignee "nweb:workspace:member:uuid2"
+  retask task list --fields @short,status
 
 Flags:
   --project-id string   Filter by project ID
   --status string       Filter by status ID (repeatable)
   --assignee string     Filter by assignee NRN (repeatable, format: nweb:workspace:member:<uuid>)
   --priority string     Filter by priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT
+  --fields string       Comma-separated output fields, in order. Preset: @short (task_id, workspace_id, key, title)
 
 Output fields: task_id, project_id, workspace_id, key, title, description, priority, status, due_at, assignee_nrns, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -119,13 +125,14 @@ Output fields: task_id, project_id, workspace_id, key, title, description, prior
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Tasks)
+			return taskFields.Print(gf.Pretty, resp.Msg.Tasks, fields)
 		},
 	}
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Filter by project ID")
 	cmd.Flags().StringArrayVar(&statusIDs, "status", nil, "Filter by status ID (repeatable)")
 	cmd.Flags().StringArrayVar(&assigneeNrns, "assignee", nil, "Filter by assignee NRN (repeatable)")
 	cmd.Flags().StringVar(&priority, "priority", "", "Filter by priority: UNKNOWN, LOW, MEDIUM, HIGH, URGENT")
+	cmd.Flags().StringVar(&fields, "fields", "", taskFields.Usage())
 	return cmd
 }
 
