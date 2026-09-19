@@ -124,6 +124,11 @@ Available on every command:
 | `--config` | — | Config file path |
 | `--verbose` | — | Print request/response info to stderr |
 
+Every `list` command also takes `--fields` to keep only the named top-level fields, in
+the order given, in both JSON and `--pretty` output. Presets start with `@`: `@short`
+selects the item's ID, workspace and name (see each command's `--help`). Presets and
+fields can be mixed, e.g. `retask sandbox list --fields @short,status`.
+
 ## Commands
 
 ```

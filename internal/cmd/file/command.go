@@ -59,8 +59,12 @@ func connect(gf *flags.Global) (filev1connect.FileServiceClient, func(), error) 
 
 // ── file list ──────────────────────────────────────────────────────────────
 
+var fileFields = output.MustFieldSet[*filev1.FileInfo](output.Presets{
+	"short": {"file_id", "workspace_id", "file_name"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var target string
+	var target, fields string
 	var createdBy []string
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -73,10 +77,12 @@ Usage examples:
   retask file list --target nweb:retask-task:task:task_abc123
   retask file list --created-by nweb:auth:user:<id>
   retask file list --pretty
+  retask file list --fields @short,bytes
 
 Flags:
   --target string      Filter by the resource the file is attached to (NRN)
   --created-by string  Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). Get yours from 'retask auth whoami' (user_nrn).
+  --fields string      Comma-separated output fields, in order. Preset: @short (file_id, workspace_id, file_name)
 
 Output fields: file_id, workspace_id, type, target_nrn, file_name, mime_type, bytes, created_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -96,11 +102,12 @@ Output fields: file_id, workspace_id, type, target_nrn, file_name, mime_type, by
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Files)
+			return fileFields.Print(gf.Pretty, resp.Msg.Files, fields)
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "", "Filter by the resource the file is attached to (NRN)")
 	cmd.Flags().StringArrayVar(&createdBy, "created-by", nil, "Filter by author user NRN (repeatable, format: nweb:auth:user:<id>). From 'retask auth whoami'.")
+	cmd.Flags().StringVar(&fields, "fields", "", fileFields.Usage())
 	return cmd
 }
 

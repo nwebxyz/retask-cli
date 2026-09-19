@@ -51,6 +51,15 @@ retask resolves a JWT in priority order:
 ## Output
 All output is JSON by default. Add `--pretty` for human-readable tables.
 
+Every `list` command takes `--fields` to keep only the fields you need, in the
+order given. `@short` is a preset for the item's ID, workspace and name; mix
+presets and fields freely:
+```bash
+retask sandbox list --fields @short              # sandbox_id, workspace_id, name
+retask task list --fields @short,status          # task_id, workspace_id, key, title, status
+retask sandbox list --fields name,status --pretty
+```
+
 ## Discovery
 ```bash
 retask skill              # this onboarding guide (Markdown)

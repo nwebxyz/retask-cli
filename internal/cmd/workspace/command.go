@@ -58,8 +58,13 @@ func connect(gf *flags.Global) (workspacev1connect.WorkspaceServiceClient, func(
 
 // ── workspace list ────────────────────────────────────────────────────────────
 
+var workspaceFields = output.MustFieldSet[*workspacev1.Workspace](output.Presets{
+	"short": {"workspace_id", "name"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all workspaces",
 		Long: `List all workspaces accessible to the authenticated user.
@@ -67,6 +72,10 @@ func newListCommand(gf *flags.Global) *cobra.Command {
 Usage example:
   retask workspace list
   retask workspace list --pretty
+  retask workspace list --fields @short
+
+Flags:
+  --fields string   Comma-separated output fields, in order. Preset: @short (workspace_id, name)
 
 Output fields: workspace_id, name, description, color, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -79,9 +88,11 @@ Output fields: workspace_id, name, description, color, created_at, updated_at`,
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Workspaces)
+			return workspaceFields.Print(gf.Pretty, resp.Msg.Workspaces, fields)
 		},
 	}
+	cmd.Flags().StringVar(&fields, "fields", "", workspaceFields.Usage())
+	return cmd
 }
 
 // ── workspace get ─────────────────────────────────────────────────────────────
@@ -258,14 +269,23 @@ func newMemberCommand(gf *flags.Global) *cobra.Command {
 	return cmd
 }
 
+var workspaceMemberFields = output.MustFieldSet[*workspacev1.WorkspaceMember](output.Presets{
+	"short": {"workspace_member_id", "workspace_id", "display_name"},
+})
+
 func newMemberListCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "list <workspace-id>",
 		Short: "List members of a workspace",
 		Long: `List all members of a workspace.
 
-Usage example:
+Usage examples:
   retask workspace member list ws_abc123
+  retask workspace member list ws_abc123 --fields @short,role
+
+Flags:
+  --fields string   Comma-separated output fields, in order. Preset: @short (workspace_member_id, workspace_id, display_name)
 
 Output fields: workspace_member_id, workspace_id, role, invited_email, display_name, membership_status, created_at`,
 		Args: cobra.ExactArgs(1),
@@ -281,9 +301,11 @@ Output fields: workspace_member_id, workspace_id, role, invited_email, display_n
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Members)
+			return workspaceMemberFields.Print(gf.Pretty, resp.Msg.Members, fields)
 		},
 	}
+	cmd.Flags().StringVar(&fields, "fields", "", workspaceMemberFields.Usage())
+	return cmd
 }
 
 func newMemberInviteCommand(gf *flags.Global) *cobra.Command {

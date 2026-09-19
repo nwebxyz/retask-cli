@@ -71,14 +71,22 @@ func fprintTable(w io.Writer, v any) error {
 		headers = append(headers, k)
 	}
 
+	cells := make([][]string, len(rows))
+	for i, row := range rows {
+		cells[i] = make([]string, len(headers))
+		for j, h := range headers {
+			cells[i][j] = fmt.Sprintf("%v", row[h])
+		}
+	}
+	return writeTable(w, headers, cells)
+}
+
+// writeTable writes a header row and data rows as space-aligned columns.
+func writeTable(w io.Writer, headers []string, rows [][]string) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, strings.Join(headers, "\t"))
 	for _, row := range rows {
-		vals := make([]string, len(headers))
-		for i, h := range headers {
-			vals[i] = fmt.Sprintf("%v", row[h])
-		}
-		fmt.Fprintln(tw, strings.Join(vals, "\t"))
+		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
 	return tw.Flush()
 }

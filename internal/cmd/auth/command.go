@@ -319,14 +319,23 @@ func newPatCommand(gf *flags.Global) *cobra.Command {
 	return cmd
 }
 
+var patFields = output.MustFieldSet[*authv1.Pat](output.Presets{
+	"short": {"pat_id", "workspace_id", "name"},
+})
+
 func newPatListCommand(gf *flags.Global) *cobra.Command {
-	return &cobra.Command{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List PATs for current user",
 		Long: `List Personal Access Tokens for the authenticated user.
 
-Usage example:
+Usage examples:
   retask auth pat list
+  retask auth pat list --fields @short,expires_at
+
+Flags:
+  --fields string   Comma-separated output fields, in order. Preset: @short (pat_id, workspace_id, name)
 
 Output fields: pat_id, name, masked_value, scopes, expires_at, last_used_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -346,9 +355,11 @@ Output fields: pat_id, name, masked_value, scopes, expires_at, last_used_at`,
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Pats)
+			return patFields.Print(gf.Pretty, resp.Msg.Pats, fields)
 		},
 	}
+	cmd.Flags().StringVar(&fields, "fields", "", patFields.Usage())
+	return cmd
 }
 
 func newPatCreateCommand(gf *flags.Global) *cobra.Command {

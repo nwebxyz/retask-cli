@@ -64,8 +64,12 @@ func connect(gf *flags.Global) (sandboxv1connect.SandboxServiceClient, func(), e
 
 // ── sandbox list ──────────────────────────────────────────────────────────────
 
+var sandboxFields = output.MustFieldSet[*sandboxv1.Sandbox](output.Presets{
+	"short": {"sandbox_id", "workspace_id", "name"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var status, sandboxType string
+	var status, sandboxType, fields string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List sandboxes",
@@ -75,10 +79,12 @@ Usage examples:
   retask sandbox list
   retask sandbox list --status READY
   retask sandbox list --type CLOUD
+  retask sandbox list --fields @short,status
 
 Flags:
   --status string   Filter by status: UNKNOWN, PROVISIONING, READY, RUNNING, STOPPED, ERROR, IDLE
   --type string     Filter by type: CLOUD, PRIVATE
+  --fields string   Comma-separated output fields, in order. Preset: @short (sandbox_id, workspace_id, name)
 
 Output fields: sandbox_id, workspace_id, name, type, status, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -115,11 +121,12 @@ Output fields: sandbox_id, workspace_id, name, type, status, created_at, updated
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Sandboxes)
+			return sandboxFields.Print(gf.Pretty, resp.Msg.Sandboxes, fields)
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "Filter by status: UNKNOWN, PROVISIONING, READY, RUNNING, STOPPED, ERROR, IDLE")
 	cmd.Flags().StringVar(&sandboxType, "type", "", "Filter by type: CLOUD, PRIVATE")
+	cmd.Flags().StringVar(&fields, "fields", "", sandboxFields.Usage())
 	return cmd
 }
 
@@ -385,8 +392,12 @@ func newSessionCommand(gf *flags.Global) *cobra.Command {
 
 // ── sandbox session list ──────────────────────────────────────────────────────
 
+var sessionFields = output.MustFieldSet[*sandboxv1.Session](output.Presets{
+	"short": {"session_id", "workspace_id", "name"},
+})
+
 func newSessionListCommand(gf *flags.Global) *cobra.Command {
-	var sandboxID, status string
+	var sandboxID, status, fields string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List sessions",
@@ -396,10 +407,12 @@ Usage examples:
   retask sandbox session list
   retask sandbox session list --sandbox-id sandbox_abc123
   retask sandbox session list --status ACTIVE
+  retask sandbox session list --fields @short,status
 
 Flags:
   --sandbox-id string   Filter by sandbox ID
   --status string       Filter by status: ACTIVE, IDLE, TIMEOUT, STOPPED
+  --fields string       Comma-separated output fields, in order. Preset: @short (session_id, workspace_id, name)
 
 Output fields: session_id, sandbox_id, workspace_id, name, status, mode, started_at, ended_at, created_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -432,11 +445,12 @@ Output fields: session_id, sandbox_id, workspace_id, name, status, mode, started
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Sessions)
+			return sessionFields.Print(gf.Pretty, resp.Msg.Sessions, fields)
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Filter by sandbox ID")
 	cmd.Flags().StringVar(&status, "status", "", "Filter by status: ACTIVE, IDLE, TIMEOUT, STOPPED")
+	cmd.Flags().StringVar(&fields, "fields", "", sessionFields.Usage())
 	return cmd
 }
 

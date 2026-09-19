@@ -71,8 +71,12 @@ func parseRole(s string) (agentv1.Agent_Role, error) {
 
 // ── agent list ────────────────────────────────────────────────────────────────
 
+var agentFields = output.MustFieldSet[*agentv1.Agent](output.Presets{
+	"short": {"agent_id", "workspace_id", "name"},
+})
+
 func newListCommand(gf *flags.Global) *cobra.Command {
-	var role string
+	var role, fields string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List agents",
@@ -81,9 +85,11 @@ func newListCommand(gf *flags.Global) *cobra.Command {
 Usage examples:
   retask agent list
   retask agent list --role ROLE_TASK_PLANNER
+  retask agent list --fields @short,role
 
 Flags:
-  --role string   Filter by role: ROLE_UNKNOWN, ROLE_TASK_PLANNER, ROLE_TASK_PROCESSOR
+  --role string     Filter by role: ROLE_UNKNOWN, ROLE_TASK_PLANNER, ROLE_TASK_PROCESSOR
+  --fields string   Comma-separated output fields, in order. Preset: @short (agent_id, workspace_id, name)
 
 Output fields: agent_id, workspace_id, name, description, role, sandbox_template_id, created_at, updated_at`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -112,10 +118,11 @@ Output fields: agent_id, workspace_id, name, description, role, sandbox_template
 			if err != nil {
 				return err
 			}
-			return output.Print(gf.Pretty, resp.Msg.Agents)
+			return agentFields.Print(gf.Pretty, resp.Msg.Agents, fields)
 		},
 	}
 	cmd.Flags().StringVar(&role, "role", "", "Filter by role: ROLE_UNKNOWN, ROLE_TASK_PLANNER, ROLE_TASK_PROCESSOR")
+	cmd.Flags().StringVar(&fields, "fields", "", agentFields.Usage())
 	return cmd
 }
 
