@@ -329,14 +329,7 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 	// cd into session folder before running the init command.
 	shellCmd := fmt.Sprintf("cd '%s' && %s", sessionDir, initCommand)
 
-	agCfg := sm.agentCfg
-	agCfg.Env = env
-	// Start the PTY at the browser's real geometry when the client reported
-	// one, so the session never renders at a default the user cannot see.
-	if cols > 0 && rows > 0 {
-		agCfg.PTYCols = cols
-		agCfg.PTYRows = rows
-	}
+	agCfg := sessionPtyConfig(sm.agentCfg, env, cols, rows)
 
 	sm.logInfo("session_starting", "session_id", sessionID, "name", name, "init_command", initCommand)
 	ag := agentfleet.NewPtyAgent([]string{"sh", "-c", shellCmd}, agCfg)
@@ -403,6 +396,23 @@ func (sm *SessionManager) create(ctx context.Context, sessionID, token, name str
 		sm.fleet.Remove(sessionID)
 		sm.logInfo("session_stopped", "session_id", sessionID)
 	}()
+}
+
+// sessionPtyConfig derives a session's PTY config from the manager's base
+// config. env (from buildEnv) becomes the child's ENTIRE environment:
+// without ReplaceEnv, agentfleet appends it to os.Environ(), which puts back
+// every host key buildEnv stripped (the operator's NWEB_API_KEY, TERM_PROGRAM,
+// ...). The PTY starts at the browser's real geometry when the client
+// reported one, so the session never renders at a default the user cannot see.
+func sessionPtyConfig(base agentfleet.AgentConfig, env []string, cols, rows int) agentfleet.AgentConfig {
+	cfg := base
+	cfg.Env = env
+	cfg.ReplaceEnv = true
+	if cols > 0 && rows > 0 {
+		cfg.PTYCols = cols
+		cfg.PTYRows = rows
+	}
+	return cfg
 }
 
 // readPump bridges the session-lane socket to the runner's stdin until the
