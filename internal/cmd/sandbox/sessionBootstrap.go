@@ -206,6 +206,10 @@ var sessionTerminalEnv = map[string]string{
 //     hostTerminalEnvDenylist, plus sessionTerminalEnv
 //  2. config   — user-configured env vars from Sandbox_Config
 //  3. injected — standard session vars that always override
+//
+// The result is the session's complete environment, and this is the only
+// place host vars are filtered: the PTY must be spawned with it as a
+// replacement for os.Environ(), not appended to it (see sessionPtyConfig).
 func buildEnv(baseEnv []string, config *sandboxv1.Sandbox_Config, injected map[string]string) []string {
 	env := make(map[string]string, len(baseEnv))
 	for _, e := range baseEnv {
