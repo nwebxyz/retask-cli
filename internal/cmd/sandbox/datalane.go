@@ -60,12 +60,16 @@ type dataLaneMsg struct {
 	ReconnectSession *dataLaneMsgReconnectSession `json:"reconnect_session,omitempty"`
 }
 
+// tokenSource returns a JWT to dial the data lane with.
+type tokenSource func(ctx context.Context) (string, error)
+
 // DataLane manages the persistent reverse WebSocket to sandbox-proxy.
 // It dispatches control messages to a SessionManager.
 type DataLane struct {
 	sandboxID string
 	wsBase    string
-	jwt       string
+	token     tokenSource
+	jwt       string // the token the last dial resolved
 	sessions  *SessionManager
 	connState *int32       // atomic
 	log       *slog.Logger // nil in TUI mode
@@ -80,11 +84,11 @@ type DataLane struct {
 	reconnectMax     time.Duration
 }
 
-func newDataLane(sandboxID, wsBase, jwt string, sessions *SessionManager, connState *int32, log *slog.Logger) *DataLane {
+func newDataLane(sandboxID, wsBase string, token tokenSource, sessions *SessionManager, connState *int32, log *slog.Logger) *DataLane {
 	dl := &DataLane{
 		sandboxID:        sandboxID,
 		wsBase:           wsBase,
-		jwt:              jwt,
+		token:            token,
 		sessions:         sessions,
 		connState:        connState,
 		log:              log,
@@ -137,6 +141,16 @@ func (dl *DataLane) Run(ctx context.Context) {
 // delete_sandbox. It reports whether the socket was established, so a drop on a
 // working lane is not mistaken for a dial that never landed.
 func (dl *DataLane) connectOnce(ctx context.Context) (established bool, err error) {
+	// The proxy checks the token on every dial, and the lane outlives any one
+	// access token (an hour by default), so each dial resolves a fresh one. A
+	// failed refresh keeps the previous token, which may still be valid.
+	if tok, terr := dl.token(ctx); terr == nil {
+		dl.jwt = tok
+	} else if dl.jwt == "" {
+		return false, fmt.Errorf("resolve token: %w", terr)
+	} else {
+		dl.logWarn("token refresh failed; dialing with the previous token", "error", terr)
+	}
 	dialURL := fmt.Sprintf("%s/ws/data-lane?sandbox_id=%s&token=%s&client_version=%s",
 		dl.wsBase, dl.sandboxID, dl.jwt, url.QueryEscape(version.Version))
 

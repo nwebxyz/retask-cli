@@ -114,6 +114,8 @@ Flags:
 
 Environment:
   SANDBOX_PROXY_ENDPOINT   Proxy base URL (default: https://sandbox-proxy.prd.nweb.app/)
+  NWEB_API_KEY             PAT the data lane exchanges for a fresh JWT on each reconnect. Without it
+                           (or with a fixed NWEB_API_TOKEN), reconnects fail once that JWT expires
   RETASK_SANDBOX_AUTO_OPEN_SESSION=1  Enable auto-open without the flag
   RETASK_SANDBOX_NO_AUTO_RESPOND=1    Disable prompt auto-response without the flag
   RETASK_SANDBOX_SESSION_BUFFER       Session output buffer size (overridden by --session-buffer)
@@ -297,7 +299,7 @@ Environment:
 				go checker.Run(ctx)
 			}
 
-			dl := newDataLane(sandboxID, wsBase, jwt, sm, &rawConnState, logger)
+			dl := newDataLane(sandboxID, wsBase, resolver.Token, sm, &rawConnState, logger)
 
 			// A deleted sandbox ends the data lane for good; there is nothing
 			// left to attach to, so unwind the CLI down the same path a Ctrl-C

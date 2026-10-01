@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,7 +30,7 @@ func runBackoffScript(t *testing.T, outcomes []connectOutcome) []string {
 	var buf bytes.Buffer
 	var connState int32
 	atomic.StoreInt32(&connState, connStateConnecting)
-	dl := newDataLane("sb", "wss://test", "jwt", nil, &connState,
+	dl := newDataLane("sb", "wss://test", staticToken("jwt"), nil, &connState,
 		slog.New(slog.NewTextHandler(&buf, nil)))
 	dl.reconnectInitial = time.Millisecond
 	dl.reconnectMax = 8 * time.Millisecond
@@ -81,4 +84,69 @@ func TestDataLaneRun_EstablishedConnectionResetsBackoff(t *testing.T) {
 		{established: false}, // dial failed  → 2ms
 	})
 	assert.Equal(t, []string{"1ms", "2ms", "4ms", "1ms", "2ms"}, delays)
+}
+
+func staticToken(tok string) tokenSource {
+	return func(context.Context) (string, error) { return tok, nil }
+}
+
+// dialTokens runs a data lane against a proxy that refuses every dial, as the
+// real one does once a token has expired, and returns the token each of the
+// first n dials carried.
+func dialTokens(t *testing.T, token tokenSource, n int) []string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, r.URL.Query().Get("token"))
+		if len(got) == n {
+			cancel() // unwinds Run
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	var connState int32
+	dl := newDataLane("sb", "ws"+strings.TrimPrefix(srv.URL, "http"), token, nil, &connState, nil)
+	dl.reconnectInitial = time.Millisecond
+	dl.reconnectMax = time.Millisecond
+	dl.Run(ctx)
+
+	mu.Lock()
+	defer mu.Unlock()
+	return got
+}
+
+// The proxy checks the token on every dial, and the lane outlives any one
+// access token (an hour by default). Dialing again with the token resolved at
+// startup would be refused forever after the first drop past that hour.
+func TestDataLaneDial_ResolvesTokenPerDial(t *testing.T) {
+	var calls int
+	token := func(context.Context) (string, error) {
+		calls++
+		return []string{"tok-1", "tok-2", "tok-3"}[calls-1], nil
+	}
+
+	assert.Equal(t, []string{"tok-1", "tok-2", "tok-3"}, dialTokens(t, token, 3))
+}
+
+// A failed refresh (auth unreachable, no NWEB_API_KEY to exchange) must not
+// stop the lane from dialing: the previous token may still be valid.
+func TestDataLaneDial_KeepsPreviousTokenWhenRefreshFails(t *testing.T) {
+	var calls int
+	token := func(context.Context) (string, error) {
+		calls++
+		if calls == 2 {
+			return "", errors.New("PAT exchange failed")
+		}
+		return []string{"tok-1", "", "tok-3"}[calls-1], nil
+	}
+
+	assert.Equal(t, []string{"tok-1", "tok-1", "tok-3"}, dialTokens(t, token, 3))
 }
