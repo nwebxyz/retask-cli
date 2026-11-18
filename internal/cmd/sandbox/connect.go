@@ -47,6 +47,19 @@ func sessionAgentConfig() agentfleet.AgentConfig {
 	return a
 }
 
+// defaultMaxSessions is how many sessions one connection runs at once unless
+// --max-sessions says otherwise.
+const defaultMaxSessions = 99
+
+// sessionFleetConfig returns the agentfleet config for a connection running at
+// most maxSessions sessions at once.
+func sessionFleetConfig(maxSessions int) agentfleet.Config {
+	cfg := agentfleet.DefaultConfig()
+	cfg.Fleet.MaxConcurrent = maxSessions
+	cfg.Agent = sessionAgentConfig()
+	return cfg
+}
+
 func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var mode string
 	var autoOpen bool
@@ -54,6 +67,7 @@ func newConnectCommand(gf *flags.Global) *cobra.Command {
 	var retention string
 	var sessionBuffer string
 	var autoUpgrade string
+	var maxSessions int
 	var logFlags logFileFlags
 	cmd := &cobra.Command{
 		Use:   "connect <id>",
@@ -73,6 +87,7 @@ Usage example:
   retask sandbox connect sandbox_abc123 --auto-open
   retask sandbox connect sandbox_abc123 --retention 7d
   retask sandbox connect sandbox_abc123 --retention off
+  retask sandbox connect sandbox_abc123 --max-sessions 20
 
 A dropped connection never tears down a running agent: the agent PTY is stopped
 only by an explicit stop/delete. Both lanes self-heal — the data lane and the
@@ -103,6 +118,8 @@ Flags:
   --auto-upgrade string  Check for and apply a newer retask release before connecting, then
                       again on this interval while running (e.g. 1h, 30m, 1d); minimum
                       1m; "off" disables it (default: 1h)
+  --max-sessions int  Sessions this connection runs at once; minimum 1 (default: 99). A session
+                      over the limit waits, hidden from the TUI, until a running session exits
   --log-file string   Log file written alongside the TUI/stderr output, relative to the
                       current folder (default: retask.log)
   --no-log-file       Do not write a log file; log to the TUI/stderr only (default: false)
@@ -128,6 +145,10 @@ Environment:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if mode != "auto" && mode != "tui" && mode != "headless" {
 				return fmt.Errorf("invalid --mode %q: must be auto, tui, or headless", mode)
+			}
+			// agentfleet would silently turn a limit <= 0 into its default of 9.
+			if maxSessions < 1 {
+				return fmt.Errorf("invalid --max-sessions %d: must be at least 1", maxSessions)
 			}
 			retentionWindow, retentionOn, err := parseRetention(retention)
 			if err != nil {
@@ -199,8 +220,7 @@ Environment:
 			useTUI := mode == "tui" || (mode == "auto" && term.IsTerminal(int(os.Stdout.Fd())))
 
 			// agentfleet config.
-			fleetCfg := agentfleet.DefaultConfig()
-			fleetCfg.Agent = sessionAgentConfig()
+			fleetCfg := sessionFleetConfig(maxSessions)
 			fleetCfg.TUI.Title = makeTitleFunc(sbResp.Msg.Name, sbResp.Msg.SandboxId)
 			fleetCfg.TUI.TitleRight = makeConnStatusFunc(&rawConnState)
 			fleetCfg.TUI.AutoOpen = autoOpen || os.Getenv("RETASK_SANDBOX_AUTO_OPEN_SESSION") == "1"
@@ -240,6 +260,7 @@ Environment:
 				"sandbox_name", sbResp.Msg.Name,
 				"mode", mode,
 				"tui", useTUI,
+				"max_sessions", maxSessions,
 				"proxy", wsBase,
 				"log_file", logFile.Path(),
 			)
@@ -340,6 +361,7 @@ Environment:
 	cmd.Flags().StringVar(&retention, "retention", "30d", `Delete session folders older than this (e.g. 30d, 12h); "off" disables`)
 	cmd.Flags().StringVar(&sessionBuffer, "session-buffer", "10MB", "Per-session output buffered across a session-lane drop (drop-oldest), flushed on reconnect. 0 disables. Accepts 512KB, 10MB, ...")
 	cmd.Flags().StringVar(&autoUpgrade, "auto-upgrade", "1h", `Check for and apply a newer retask release before connecting, then on this interval while running (e.g. 1h, 30m, 1d; minimum 1m); "off" disables it`)
+	cmd.Flags().IntVar(&maxSessions, "max-sessions", defaultMaxSessions, "Sessions this connection runs at once; minimum 1. A session over the limit waits, hidden from the TUI, until a running session exits")
 	logFlags.register(cmd)
 	return cmd
 }

@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	agentfleet "github.com/hoaitan/agentfleet"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nwebxyz/retask-cli/internal/flags"
 )
 
 func TestProxyWSBase(t *testing.T) {
@@ -95,4 +98,54 @@ func TestSessionAgentConfig_Is80x90(t *testing.T) {
 	a := sessionAgentConfig()
 	assert.Equal(t, 80, a.PTYCols, "session terminal width")
 	assert.Equal(t, 90, a.PTYRows, "session terminal height")
+}
+
+func TestConnectMaxSessionsDefaultsTo99(t *testing.T) {
+	f := newConnectCommand(&flags.Global{}).Flags().Lookup("max-sessions")
+	require.NotNil(t, f, "--max-sessions must be registered")
+	assert.Equal(t, "99", f.DefValue)
+}
+
+// agentfleet silently turns a limit <= 0 into 9, so these must be refused
+// rather than passed through.
+func TestConnectRejectsMaxSessionsBelowOne(t *testing.T) {
+	for _, value := range []string{"0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			cmd := newConnectCommand(&flags.Global{})
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			cmd.SetArgs([]string{"sandbox_abc123", "--max-sessions=" + value})
+
+			err := cmd.Execute()
+
+			require.Error(t, err)
+			assert.EqualError(t, err, "invalid --max-sessions "+value+": must be at least 1")
+		})
+	}
+}
+
+func TestSessionFleetConfigAppliesMaxSessions(t *testing.T) {
+	const limit = 10 // above agentfleet's default of 9
+	cfg := sessionFleetConfig(limit)
+	fleet := agentfleet.NewFleet(cfg.Fleet)
+	newRunner := func() *agentfleet.Runner {
+		task := &agentfleet.BasicTask{TaskID: "s", TaskName: "s", Cmd: "sh"}
+		return agentfleet.NewRunner(task, agentfleet.NewMockAgent(), cfg.Fleet, cfg.Agent)
+	}
+
+	for i := range limit {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		err := fleet.Add(ctx, newRunner())
+		cancel()
+		require.NoError(t, err, "session %d should get a slot", i+1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	assert.ErrorIs(t, fleet.Add(ctx, newRunner()), context.DeadlineExceeded,
+		"the session after the limit should wait for a slot")
+}
+
+func TestSessionFleetConfigKeepsSessionPTYSize(t *testing.T) {
+	assert.Equal(t, sessionAgentConfig(), sessionFleetConfig(1).Agent)
 }
